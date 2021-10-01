@@ -1,0 +1,13 @@
+mainmodule tester {
+    initnode void setup_segment(void);
+
+    mainchare main {
+        entry main(CkArgMsg*);
+        entry void recv_msg(sm_);
+    };
+
+    chare neighbor {
+        entry neighbor(CProxy_main);
+        entry void recv_msg(sm_);
+    };
+}
