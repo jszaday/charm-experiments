@@ -34,31 +34,25 @@ class ipc_lfq {
   }
 
   bool enqueue(T* value) {
-    auto size = std::atomic_fetch_add_explicit(&(this->count), 1ul,
-                                               std::memory_order_acquire);
+    auto size = this->count.fetch_add(1ul, std::memory_order_acquire);
     if (size >= N) {
-      std::atomic_fetch_sub_explicit(&(this->count), 1ul,
-                                     std::memory_order_release);
+      this->count.fetch_sub(1ul, std::memory_order_release);
       return false;
     }
-    auto head = std::atomic_fetch_add_explicit(&(this->head), 1ul,
-                                               std::memory_order_acquire) %
-                N;
-    auto ret = std::atomic_exchange_explicit(&(this->data[head]), value,
-                                             std::memory_order_release);
+    auto head = this->head.fetch_add(1ul, std::memory_order_acquire) % N;
+    auto* ret = this->data[head].exchange(value, std::memory_order_release);
     assert(ret == nullptr);
     return true;
   }
 
-  T* dequeue(void) {
-    auto ret = std::atomic_exchange_explicit(
-        &(this->data[this->tail]), (T*)nullptr, std::memory_order_acquire);
+  value_type dequeue(void) {
+    auto ret =
+        this->data[this->tail].exchange(nullptr, std::memory_order_acquire);
     if (ret == nullptr) {
       return nullptr;
     }
     if (++(this->tail) >= N) this->tail = 0;
-    auto last = std::atomic_fetch_sub_explicit(&(this->count), 1ul,
-                                               std::memory_order_release);
+    auto last = this->count.fetch_sub(1ul, std::memory_order_release);
     assert(last > 0);
     return ret;
   }
