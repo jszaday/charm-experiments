@@ -18,43 +18,66 @@
 
 template <typename T, std::size_t N>
 class ipc_lfq {
-  using value_type = T*;
+  static_assert(std::is_trivially_copyable<T>::value,
+                "value must be trivially copyable");
+
+  struct node {
+    std::atomic<bool> lock;
+    bool has_value;
+    T value[1];
+
+    node(void) : lock(false), has_value(false) {}
+
+    inline bool acquire(void) {
+      return !this->lock.exchange(true, std::memory_order_acquire);
+    }
+
+    inline bool release(void) {
+      return this->lock.exchange(false, std::memory_order_release);
+    }
+  };
 
   const int fd;
   std::atomic<std::size_t> head;
   std::atomic<std::size_t> count;
   std::size_t tail;
-  std::array<std::atomic<value_type>, N> data;
+  std::array<node, N> data;
 
  public:
-  ipc_lfq(const int& _) : fd(_), head(0), count(0), tail(0) {
-    for (auto& datum : data) {
-      datum = nullptr;
-    }
-  }
+  ipc_lfq(const int& _) : fd(_), head(0), count(0), tail(0) {}
 
-  bool enqueue(T* value) {
+  bool enqueue(const T& value) {
     auto size = this->count.fetch_add(1ul, std::memory_order_acquire);
     if (size >= N) {
       this->count.fetch_sub(1ul, std::memory_order_release);
       return false;
     }
     auto head = this->head.fetch_add(1ul, std::memory_order_acquire) % N;
-    auto* ret = this->data[head].exchange(value, std::memory_order_release);
-    assert(ret == nullptr);
+    auto& node = this->data[head];
+    while (!node.acquire())
+      ;
+    auto set_value = true;
+    std::swap(node.has_value, set_value);
+    memcpy(node.value, &value, sizeof(T));
+    assert(!set_value && node.release());
     return true;
   }
 
-  value_type dequeue(void) {
-    auto ret =
-        this->data[this->tail].exchange(nullptr, std::memory_order_acquire);
-    if (ret == nullptr) {
-      return nullptr;
+  bool dequeue(T* result) {
+    auto* node = &(this->data[this->tail]);
+    while (!node->acquire())
+      ;
+    auto ret = node->has_value;
+    if (ret) {
+      memcpy(result, node->value, sizeof(T));
+      node->has_value = false;
     }
+    assert(node->release());
+    if (!ret) return false;
     if (++(this->tail) >= N) this->tail = 0;
     auto last = this->count.fetch_sub(1ul, std::memory_order_release);
     assert(last > 0);
-    return ret;
+    return true;
   }
 
   static ipc_lfq<T, N>* open(const char* name) {

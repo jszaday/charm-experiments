@@ -3,7 +3,7 @@
 const char* q0_name_ = "queue_0_";
 const char* q1_name_ = "queue_1_";
 constexpr auto num_msgs_ = 16;
-using queue_type_ = ipc_lfq<std::intptr_t, num_msgs_>;
+using queue_type_ = ipc_lfq<int, num_msgs_>;
 
 int main(int argc, char** argv) {
   assert(argc >= 2);
@@ -20,16 +20,19 @@ int main(int argc, char** argv) {
   for (auto it = 0; it < num_msgs_; it++) {
     printf("%d> sending messages for it %d.\n", procNum, it);
     for (std::intptr_t i = 1; i <= num_msgs_; i++) {
-      while (!theirs->enqueue((std::intptr_t*)i))
+      while (!theirs->enqueue(i))
         ;
     }
 
     printf("%d> waiting for messages for it %d.\n", procNum, it);
     for (auto i = 1; i <= num_msgs_; i++) {
-      std::intptr_t* j;
-      while ((j = mine->dequeue()) == nullptr)
+      int j = 0;
+      while (!mine->dequeue(&j))
         ;
-      assert(i == (std::intptr_t)j);
+      if (i != j) {
+        printf("%d != %d\n", i, j);
+        assert(false);
+      }
     }
   }
 
