@@ -1,72 +1,4 @@
-#include <algorithm>
-#include <ctime>
-
-#include "../lfq/ipc_lfq.hh"
-#include "pool.hh"
-
-CpvDeclare(int, run_handler);
-CpvDeclare(int, initiate_handler);
-
-struct empty_msg_ {
-  char core[CmiMsgHeaderSizeBytes];
-};
-
-struct init_msg_ : public empty_msg_ {
-  int src;
-  xpmem_segid_t segid;
-  void *pool;
-  void *queue;
-};
-
-struct block_msg_ {
-  ipc_pool::block *block;
-  std::size_t size;
-  bool last;
-
-  block_msg_(void) = default;
-
-  block_msg_(ipc_pool::block *block_, const std::size_t &size_,
-             const bool &last_)
-      : block(block_), size(size_), last(last_) {}
-};
-
-constexpr auto kNumMsgs = 16;
-using ipc_queue = ipc_lfq<block_msg_, kNumMsgs>;
-
-std::map<int, ipc_pool *> pools_;
-std::map<int, ipc_queue *> queues_;
-
-ipc_pool *pool_for(const int &pe) {
-  auto search = pools_.find(pe);
-  if (search == std::end(pools_)) {
-    if (pe == CmiMyNode()) {
-      auto ins = pools_.emplace(pe, new ipc_pool(pe));
-      assert(ins.second);
-      search = ins.first;
-    } else {
-      return nullptr;
-    }
-  }
-  return search->second;
-}
-
-ipc_queue *queue_for(const int &pe) {
-  auto search = queues_.find(pe);
-  if (search == std::end(queues_)) {
-    if (pe == CmiMyNode()) {
-      auto ins = queues_.emplace(pe, new ipc_queue(pe));
-      assert(ins.second);
-      search = ins.first;
-    } else {
-      return nullptr;
-    }
-  }
-  return search->second;
-}
-
-void *null_merge_fn(int *size, void *local, void **remote, int count) {
-  return local;
-}
+#include "tester.hh"
 
 void handle_initiate(void *msg) {
   auto *typed = (init_msg_ *)msg;
@@ -94,8 +26,6 @@ void handle_initiate(void *msg) {
     CmiReduce((char *)msg, sizeof(empty_msg_), null_merge_fn);
   }
 }
-
-bool handle_block(void *msg);
 
 void handle_run(void *msg) {
   auto mine = CmiMyNode();
@@ -184,7 +114,7 @@ bool handle_block(void *msg) {
 }
 
 void test_init(int argc, char **argv) {
-  // Allocate initialization mesasage
+  // Allocate initialization message
   auto *msg = (init_msg_ *)CmiAlloc(sizeof(init_msg_));
   CmiInitMsgHeader(msg->core, sizeof(empty_msg_));
   // And populate it (while creating the xpmem segment)
@@ -200,7 +130,11 @@ void test_init(int argc, char **argv) {
   CpvInitialize(int, initiate_handler);
   CpvAccess(initiate_handler) = CmiRegisterHandler((CmiHandler)handle_initiate);
   // Wait for all PEs of the node to complete topology init
+  CmiInitCPUAffinity(argv);
+  CmiInitCPUTopology(argv);
   CmiNodeAllBarrier();
+  // Enforce the test's topological assumptions
+  assert(!CMK_SMP && CmiNumPhysicalNodes() == 1);
   // Broadcast initialization information to all PEs
   CmiSetHandler(msg, CpvAccess(initiate_handler));
   CmiSyncBroadcastAndFree(sizeof(init_msg_), (char *)msg);
