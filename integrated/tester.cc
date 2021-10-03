@@ -116,8 +116,8 @@ void handle_run(void *msg) {
   CmiPrintf("%d> populating local buffers...\n", mine);
   auto my_pool = pool_for(mine);
   for (auto i = 0; i < numBlocks; i++) {
-    assert(my_pool->lput(malloc(maxSize), maxSize));
-    assert(my_pool->lput(malloc(maxSize / 2), maxSize / 2));
+    while (!my_pool->lput(malloc(maxSize), maxSize));
+    while (!my_pool->lput(malloc(maxSize / 2), maxSize / 2));
   }
 
   auto theirs = (mine + 1) % CmiNumPes();
