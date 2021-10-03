@@ -3,11 +3,11 @@ mainmodule tester {
 
     mainchare main {
         entry main(CkArgMsg*);
-        entry void recv_msg(sm_);
+        entry void pseudo_scheduler(void);
     };
 
     chare neighbor {
         entry neighbor(CProxy_main);
-        entry void recv_msg(sm_);
+        entry void pseudo_scheduler(void);
     };
 }

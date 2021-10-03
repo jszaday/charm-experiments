@@ -1,6 +1,7 @@
 CHARMC=$(CHARM_HOME)/bin/charmc
 CHARMRUN=$(CHARM_HOME)/bin/charmrun
-OPTS:=$(OPTS) -O2 -g3 -lrt
+OPTS:=$(OPTS) -O2 -g3
+LIBS:=$(LIBS) -latomic -lrt -lxpmem
 
 CMK_NUM_PES?=2
 TESTOPTS:=$(TESTOPTS) +p$(CMK_NUM_PES)
@@ -16,7 +17,7 @@ $(BINARY).o: $(BINARY).cc $(BINARY).de*.h
 	$(CHARMC) -language charm++ $(OPTS) -c -o $(BINARY).o $(BINARY).cc 
 
 $(BINARY): $(BINARY).o
-	$(CHARMC) $(OPTS) -o $(BINARY) $(BINARY).o -lxpmem
+	$(CHARMC) $(OPTS) -o $(BINARY) $(BINARY).o $(LIBS)
 
 test: $(BINARY)
 	$(CHARMRUN) ./$(BINARY) $(TESTOPTS)
