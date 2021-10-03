@@ -21,6 +21,10 @@ class ipc_lfq {
   static_assert(std::is_trivially_copyable<T>::value,
                 "value must be trivially copyable");
 
+ public:
+  const int fd;
+
+ private:
   struct node {
     std::atomic<bool> lock;
     bool has_value;
@@ -37,7 +41,6 @@ class ipc_lfq {
     }
   };
 
-  const int fd;
   std::atomic<std::size_t> head;
   std::atomic<std::size_t> count;
   std::size_t tail;

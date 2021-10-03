@@ -1,10 +1,10 @@
 #include <algorithm>
 #include <ctime>
 
+#include "../lfq/ipc_lfq.hh"
 #include "pool.hh"
 
 CpvDeclare(int, run_handler);
-CpvDeclare(int, block_handler);
 CpvDeclare(int, initiate_handler);
 
 struct empty_msg_ {
@@ -15,28 +15,46 @@ struct init_msg_ : public empty_msg_ {
   int src;
   xpmem_segid_t segid;
   void *pool;
+  void *queue;
 };
 
-struct block_msg_ : public empty_msg_ {
+struct block_msg_ {
   ipc_pool::block *block;
   std::size_t size;
-  const bool last;
+  bool last;
+
+  block_msg_(void) = default;
 
   block_msg_(ipc_pool::block *block_, const std::size_t &size_,
              const bool &last_)
-      : block(block_), size(size_), last(last_) {
-    CmiInitMsgHeader(this->core, sizeof(empty_msg_));
-    CmiSetHandler(this, CpvAccess(block_handler));
-  }
+      : block(block_), size(size_), last(last_) {}
 };
 
+constexpr auto kNumMsgs = 16;
+using ipc_queue = ipc_lfq<block_msg_, kNumMsgs>;
+
 std::map<int, ipc_pool *> pools_;
+std::map<int, ipc_queue *> queues_;
 
 ipc_pool *pool_for(const int &pe) {
   auto search = pools_.find(pe);
   if (search == std::end(pools_)) {
     if (pe == CmiMyNode()) {
       auto ins = pools_.emplace(pe, new ipc_pool(pe));
+      assert(ins.second);
+      search = ins.first;
+    } else {
+      return nullptr;
+    }
+  }
+  return search->second;
+}
+
+ipc_queue *queue_for(const int &pe) {
+  auto search = queues_.find(pe);
+  if (search == std::end(queues_)) {
+    if (pe == CmiMyNode()) {
+      auto ins = queues_.emplace(pe, new ipc_queue(pe));
       assert(ins.second);
       search = ins.first;
     } else {
@@ -55,9 +73,15 @@ void handle_initiate(void *msg) {
   auto &srcPe = typed->src;
 
   put_segment(srcPe, typed->segid);
-  auto ins = pools_.emplace(srcPe, (ipc_pool *)translate_address(
-                                       srcPe, typed->pool, sizeof(ipc_pool)));
-  assert(ins.second);
+  auto ins_pool = pools_.emplace(
+      srcPe,
+      (ipc_pool *)translate_address(srcPe, typed->pool, sizeof(ipc_pool)));
+  assert(ins_pool.second);
+
+  auto ins_queue = queues_.emplace(
+      srcPe,
+      (ipc_queue *)translate_address(srcPe, typed->queue, sizeof(ipc_queue)));
+  assert(ins_queue.second);
 
   CmiFree(msg);
 
@@ -71,12 +95,7 @@ void handle_initiate(void *msg) {
   }
 }
 
-void broadcast_exit(void) {
-  auto *msg = (empty_msg_ *)CmiAlloc(sizeof(empty_msg_));
-  CmiInitMsgHeader(msg->core, sizeof(empty_msg_));
-  CmiSetHandler(msg, CpvAccess(block_handler));
-  CmiSyncBroadcastAllAndFree(sizeof(empty_msg_), (char *)msg);
-}
+bool handle_block(void *msg);
 
 void handle_run(void *msg) {
   auto mine = CmiMyNode();
@@ -91,8 +110,8 @@ void handle_run(void *msg) {
     CmiFree(msg);
   }
 
+  auto numBlocks = kNumMsgs / 2;
   auto maxSize = 128;
-  auto numBlocks = 8;
 
   CmiPrintf("%d> populating local buffers...\n", mine);
   auto my_pool = pool_for(mine);
@@ -103,15 +122,19 @@ void handle_run(void *msg) {
 
   auto theirs = (mine + 1) % CmiNumPes();
   auto their_pool = pool_for(theirs);
+  auto their_queue = queue_for(theirs);
   assert(theirs == their_pool->pe);
+  assert(theirs == their_queue->fd);
 
   srand(time(0));
 
   CmiPrintf("%d> awaiting remote buffers...\n", mine);
   for (auto i = 0; i < numBlocks * 2;) {
+    constexpr auto intSz = sizeof(int);
     auto sz = (rand() % maxSize) + 1;
-    sz += sz % sizeof(int);
-    assert(sz <= maxSize);
+    sz = sz + intSz - (sz % intSz);
+    if (sz > maxSize) sz = maxSize;
+    assert((sz % intSz) == 0);
 
     auto *block = their_pool->ralloc(sz);
     CmiPrintf("%d> requesting block of size %d bytes... %s\n", mine, sz,
@@ -122,17 +145,28 @@ void handle_run(void *msg) {
       auto *xlatd = (ipc_pool::block *)translate_address(
           theirs, block, sizeof(ipc_pool::block));
       auto *data = (int *)translate_address(theirs, xlatd->ptr, sz);
-      std::fill(data, data + (sz / sizeof(int)), (int)sz);
+      std::fill(data, data + (sz / intSz), (int)sz);
       // and send it back to the host pe for verification/free
-      // TODO ( use IPC queue vs. Converse )
-      auto *msg = (block_msg_ *)CmiAlloc(sizeof(block_msg_));
-      new (msg) block_msg_(block, sz, ++i == (numBlocks * 2));
-      CmiSyncSendAndFree(theirs, sizeof(block_msg_), msg);
+      block_msg_ msg(block, sz, ++i == (numBlocks * 2));
+      while (!their_queue->enqueue(msg))
+        ;
     }
   }
+
+  // pseudo-scheduler loop for short messages
+  bool status;
+  auto my_queue = queue_for(mine);
+  do {
+    block_msg_ msg;
+    while (!my_queue->dequeue(&msg))
+      ;
+    status = handle_block(&msg);
+  } while (status);
+
+  CsdExitScheduler();
 }
 
-void handle_block(void *msg) {
+bool handle_block(void *msg) {
   auto mine = CmiMyNode();
   auto *typed = (block_msg_ *)msg;
   CmiPrintf("%d> received %s block!\n", mine, typed->last ? "last" : "a");
@@ -145,11 +179,8 @@ void handle_block(void *msg) {
   // clean everything up
   free(data);
   delete block;
-  CmiFree(msg);
-  // then check whether we should exit
-  if (typed->last) {
-    CsdExitScheduler();
-  }
+  // return status
+  return !typed->last;
 }
 
 void test_init(int argc, char **argv) {
@@ -160,11 +191,10 @@ void test_init(int argc, char **argv) {
   msg->src = CmiMyNode();
   msg->segid = make_segment();
   msg->pool = pool_for(msg->src);
+  msg->queue = queue_for(msg->src);
   put_segment(msg->src, msg->segid);
   assert(msg->segid >= 0);
   // Register handlers
-  CpvInitialize(int, block_handler);
-  CpvAccess(block_handler) = CmiRegisterHandler((CmiHandler)handle_block);
   CpvInitialize(int, run_handler);
   CpvAccess(run_handler) = CmiRegisterHandler((CmiHandler)handle_run);
   CpvInitialize(int, initiate_handler);
