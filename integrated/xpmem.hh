@@ -7,7 +7,7 @@ extern "C" {
 #include <xpmem.h>
 }
 
-extern int CmiMyNode(void);
+#include <converse.h>
 
 xpmem_segid_t make_segment(void) {
   return xpmem_make(0, XPMEM_MAXADDR_SIZE, XPMEM_PERMIT_MODE, (void *)0666);
@@ -42,11 +42,11 @@ xpmem_apid_t get_instance(const int &pe) {
 // "borrowed" from VADER
 // (https://github.com/open-mpi/ompi/tree/386ba164557bb8115131921041757be94a989646/opal/mca/smsc/xpmem)
 #define OPAL_DOWN_ALIGN(x, a, t) ((x) & ~(((t)(a)-1)))
-#define OPAL_DOWN_ALIGN_PTR(x, a, t)                                           \
+#define OPAL_DOWN_ALIGN_PTR(x, a, t) \
   ((t)OPAL_DOWN_ALIGN((uintptr_t)x, a, uintptr_t))
 #define OPAL_ALIGN(x, a, t) (((x) + ((t)(a)-1)) & ~(((t)(a)-1)))
 #define OPAL_ALIGN_PTR(x, a, t) ((t)OPAL_ALIGN((uintptr_t)x, a, uintptr_t))
-#define OPAL_ALIGN_PAD_AMOUNT(x, s)                                            \
+#define OPAL_ALIGN_PAD_AMOUNT(x, s) \
   ((~((uintptr_t)(x)) + 1) & ((uintptr_t)(s)-1))
 
 void *translate_address(const int &pe, void *remote_ptr,
@@ -67,6 +67,7 @@ void *translate_address(const int &pe, void *remote_ptr,
     auto *ctx = xpmem_attach(addr, bound - base, NULL);
     assert(ctx != (void *)-1);
 
-    return (void *)((uintptr_t)ctx + (ptrdiff_t)((uintptr_t)remote_ptr - (uintptr_t)base));
+    return (void *)((uintptr_t)ctx +
+                    (ptrdiff_t)((uintptr_t)remote_ptr - (uintptr_t)base));
   }
 }

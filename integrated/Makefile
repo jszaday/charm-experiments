@@ -1,5 +1,5 @@
-CXX?=g++
-OPTS:=$(OPTS) -O2 -g3 -Wall -std=c++11
+CHARMC=$(CHARM_HOME)/bin/charmc
+OPTS:=$(OPTS) -O2 -g3 -Wall -std=c++11 -language converse++
 LIBS:=-latomic -lrt -lxpmem
 
 BINARY=tester
@@ -7,10 +7,10 @@ BINARY=tester
 all: $(BINARY)
 
 $(BINARY): $(BINARY).cc
-	$(CXX) $(OPTS) -o $(BINARY) $(BINARY).cc $(LIBS)
+	$(CHARMC) $(OPTS) -o $(BINARY) $(BINARY).cc $(LIBS)
 
 test: $(BINARY)
-	./$(BINARY)
+	./charmrun +p2 ++local ./$(BINARY)
 
 clean:
 	rm -f $(BINARY)
