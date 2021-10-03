@@ -1,5 +1,7 @@
 #include "tester.hh"
 
+// exchange ipc mempools and queues with peers.
+// contribute to a reduction when all info received.
 void handle_initiate(void *msg) {
   auto *typed = (init_msg_ *)msg;
   auto &srcPe = typed->src;
@@ -27,6 +29,12 @@ void handle_initiate(void *msg) {
   }
 }
 
+/* goes through the following process:
+ * 1) populate local (receive) buffers.
+ * 2) send messages to peers.
+ * 3) wait for messages to arrive, then handle.
+ * 4) exit once all messages handled.
+ */
 void handle_run(void *msg) {
   auto mine = CmiMyNode();
 
