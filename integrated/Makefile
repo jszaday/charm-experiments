@@ -1,6 +1,6 @@
 CXX?=g++
 OPTS:=$(OPTS) -O2 -g3 -Wall -std=c++11
-LIBS:=-lrt -latomic
+LIBS:=-latomic -lrt -lxpmem
 
 BINARY=tester
 

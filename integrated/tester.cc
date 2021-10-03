@@ -1,8 +1,34 @@
 #include "pool.hh"
 #include <time.h>
 
+int my_node_ = 0;
+
+int CmiMyNode(void) {
+  return my_node_;
+}
+
+std::map<int, ipc_pool*> pools_;
+
+ipc_pool *pool_for(const int& pe) {
+  auto search = pools_.find(pe);
+  if (search == std::end(pools_)) {
+    if (pe == CmiMyNode()) {
+      auto ins = pools_.emplace(pe, new ipc_pool(pe));
+      assert(ins.second);
+      search = ins.first;
+    } else {
+      return nullptr;
+    }
+  }
+  return search->second;
+}
+
 int main(int argc, char** argv) {
-  auto pool = new ipc_pool(0);
+  if (argc >= 2) {
+    my_node_ = atoi(argv[1]);
+  }
+
+  auto *pool = pool_for(CmiMyNode());
   auto maxSize = 128;
   auto numBlocks = 8;
 

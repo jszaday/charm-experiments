@@ -7,6 +7,8 @@
 #include <cstdint>
 #include <limits>
 
+#include "xpmem.hh"
+
 constexpr std::size_t kNumCutOffPoints = 25;
 const std::array<std::size_t, kNumCutOffPoints> kCutOffPoints = {
     64,        128,       256,       512,       1024,     2048,     4096,
@@ -72,16 +74,12 @@ struct ipc_pool {
       assert(swap == nullptr);
       return nullptr;
     } else {
-      auto *next = this->translate_address(head)->next;
+      auto *xlatd = translate_address(this->pe, head, kCutOffPoints[pt]);
+      auto *next = ((block *)xlatd)->next;
       auto *swap = this->blocks[pt].exchange(next, std::memory_order_release);
       assert(swap == nullptr);
       return head;
     }
-  }
-
-  template <typename T>
-  T *translate_address(T *addr) {
-    return addr;
   }
 };
 
