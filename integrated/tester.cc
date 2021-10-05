@@ -147,9 +147,15 @@ void test_init(int argc, char **argv) {
   CmiNodeAllBarrier();
   // Enforce the test's topological assumptions
   assert(!CMK_SMP && CmiNumPhysicalNodes() == 1);
-  // Broadcast initialization information to all PEs
-  CmiSetHandler(msg, CpvAccess(initiate_handler));
-  CmiSyncBroadcastAndFree(sizeof(init_msg_), (char *)msg);
+  if (CmiNumPes() == 1) {
+    // Just start runnning (we are peerless)
+    CmiSetHandler(msg, CpvAccess(run_handler));
+    CmiSyncSendAndFree(CmiMyPe(), sizeof(init_msg_), (char *)msg);
+  } else {
+    // Broadcast initialization information to all PEs
+    CmiSetHandler(msg, CpvAccess(initiate_handler));
+    CmiSyncBroadcastAndFree(sizeof(init_msg_), (char *)msg);
+  }
 }
 
 int main(int argc, char **argv) { ConverseInit(argc, argv, test_init, 0, 0); }
