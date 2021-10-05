@@ -9,7 +9,7 @@ void handle_initiate(void *msg) {
   put_segment(srcPe, typed->segid);
   auto ins_pool = pools_.emplace(
       srcPe,
-      (ipc_pool *)translate_address(srcPe, typed->pool, sizeof(ipc_pool)));
+      (ipc::mempool *)translate_address(srcPe, typed->pool, sizeof(ipc::mempool)));
   assert(ins_pool.second);
 
   auto ins_queue = queues_.emplace(
@@ -80,8 +80,8 @@ void handle_run(void *msg) {
 
     if (block != nullptr) {
       // fill the block with test data
-      auto *xlatd = (ipc_pool::block *)translate_address(
-          theirs, block, sizeof(ipc_pool::block));
+      auto *xlatd = (ipc::block *)translate_address(
+          theirs, block, sizeof(ipc::block));
       auto *data = (int *)translate_address(theirs, xlatd->ptr, sz);
       std::fill(data, data + (sz / intSz), (int)sz);
       // and send it back to the host pe for verification/free

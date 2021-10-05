@@ -22,28 +22,27 @@ struct init_msg_ : public empty_msg_ {
 };
 
 struct block_msg_ {
-  ipc_pool::block *block;
+  ipc::block *block;
   std::size_t size;
   bool last;
 
   block_msg_(void) = default;
 
-  block_msg_(ipc_pool::block *block_, const std::size_t &size_,
-             const bool &last_)
+  block_msg_(ipc::block *block_, const std::size_t &size_, const bool &last_)
       : block(block_), size(size_), last(last_) {}
 };
 
 constexpr auto kNumMsgs = 16;
 using ipc_queue = ipc_lfq<block_msg_, kNumMsgs>;
 
-std::map<int, ipc_pool *> pools_;
+std::map<int, ipc::mempool *> pools_;
 std::map<int, ipc_queue *> queues_;
 
-ipc_pool *pool_for(const int &pe) {
+ipc::mempool *pool_for(const int &pe) {
   auto search = pools_.find(pe);
   if (search == std::end(pools_)) {
     if (pe == CmiMyNode()) {
-      auto ins = pools_.emplace(pe, new ipc_pool(pe));
+      auto ins = pools_.emplace(pe, new ipc::mempool(pe));
       assert(ins.second);
       search = ins.first;
     } else {

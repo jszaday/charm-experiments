@@ -7,7 +7,7 @@
 #include <cstdint>
 #include <limits>
 
-#include "xpmem.hh"
+#include "common.hh"
 
 constexpr std::size_t kNumCutOffPoints = 25;
 const std::array<std::size_t, kNumCutOffPoints> kCutOffPoints = {
@@ -26,21 +26,15 @@ inline std::size_t which_pow2(const std::size_t &sz) {
   return i;
 }
 
-struct ipc_pool {
+namespace ipc {
+struct mempool {
   const int pe;
-
-  struct block {
-    block *next;
-    void *ptr;
-
-    block(block *next_, void *ptr_) : next(next_), ptr(ptr_) {}
-  };
 
   static constexpr auto kTail = std::numeric_limits<std::uintptr_t>::max();
 
   std::array<std::atomic<block *>, kNumCutOffPoints> blocks;
 
-  ipc_pool(const int &pe_) : pe(pe_) {
+  mempool(const int &pe_) : pe(pe_) {
     for (std::size_t i = 0; i < kNumCutOffPoints; i++) {
       this->blocks[i] = (block *)kTail;
     }
@@ -55,7 +49,7 @@ struct ipc_pool {
     if (head == nullptr) {
       return false;
     }
-    auto *next = new block(head, ptr);
+    auto *next = new block(head, ptr, sz);
     auto *swap = this->blocks[pt].exchange(next, std::memory_order_release);
     assert(swap == nullptr);
     return true;
@@ -82,5 +76,6 @@ struct ipc_pool {
     }
   }
 };
+}  // namespace ipc
 
 #endif
