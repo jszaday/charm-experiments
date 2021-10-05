@@ -5,7 +5,6 @@
 #include <atomic>
 #include <cassert>
 #include <cstdint>
-#include <limits>
 
 #include "common.hh"
 
@@ -29,8 +28,6 @@ inline std::size_t which_pow2(const std::size_t &sz) {
 namespace ipc {
 struct mempool {
   const int pe;
-
-  static constexpr auto kTail = std::numeric_limits<std::uintptr_t>::max();
 
   std::array<std::atomic<block *>, kNumCutOffPoints> blocks;
 

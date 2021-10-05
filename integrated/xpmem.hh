@@ -1,13 +1,11 @@
-
 #include <cassert>
-#include <cstdint>
 #include <map>
 
 extern "C" {
 #include <xpmem.h>
 }
 
-#include <converse.h>
+#include "common.hh"
 
 xpmem_segid_t make_segment(void) {
   return xpmem_make(0, XPMEM_MAXADDR_SIZE, XPMEM_PERMIT_MODE, (void *)0666);
