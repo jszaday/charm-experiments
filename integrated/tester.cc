@@ -7,14 +7,14 @@ void handle_initiate(void *msg) {
   auto &srcPe = typed->src;
 
   put_segment(srcPe, typed->segid);
-  auto ins_pool = pools_.emplace(
-      srcPe,
-      (ipc::mempool *)translate_address(srcPe, typed->pool, sizeof(ipc::mempool)));
+  auto ins_pool =
+      pools_.emplace(srcPe, (ipc::mempool *)translate_address(
+                                srcPe, typed->pool, sizeof(ipc::mempool)));
   assert(ins_pool.second);
 
   auto ins_queue = queues_.emplace(
       srcPe,
-      (ipc_queue *)translate_address(srcPe, typed->queue, sizeof(ipc_queue)));
+      (ipc::queue *)translate_address(srcPe, typed->queue, sizeof(ipc::queue)));
   assert(ins_queue.second);
 
   CmiFree(msg);
@@ -54,22 +54,24 @@ void handle_run(void *msg) {
   CmiPrintf("%d> populating local buffers...\n", mine);
   auto my_pool = pool_for(mine);
   for (auto i = 0; i < numBlocks; i++) {
-    while (!my_pool->lput(malloc(maxSize), maxSize));
-    while (!my_pool->lput(malloc(maxSize / 2), maxSize / 2));
+    while (!my_pool->lput(malloc(maxSize), maxSize))
+      ;
+    while (!my_pool->lput(malloc(maxSize / 2), maxSize / 2))
+      ;
   }
 
   auto theirs = (mine + 1) % CmiNumPes();
   auto their_pool = pool_for(theirs);
   auto their_queue = queue_for(theirs);
   assert(theirs == their_pool->pe);
-  assert(theirs == their_queue->fd);
+  assert(theirs == their_queue->pe);
 
   srand(time(0));
 
   CmiPrintf("%d> awaiting remote buffers...\n", mine);
   for (auto i = 0; i < numBlocks * 2;) {
     constexpr auto intSz = sizeof(int);
-    auto sz = (rand() % maxSize) + 1;
+    auto sz = rand() % maxSize;
     sz = sz + intSz - (sz % intSz);
     if (sz > maxSize) sz = maxSize;
     assert((sz % intSz) == 0);
@@ -80,45 +82,47 @@ void handle_run(void *msg) {
 
     if (block != nullptr) {
       // fill the block with test data
-      auto *xlatd = (ipc::block *)translate_address(
-          theirs, block, sizeof(ipc::block));
-      auto *data = (int *)translate_address(theirs, xlatd->ptr, sz);
+      auto *xlatd =
+          (ipc::block *)translate_address(theirs, block, sizeof(ipc::block));
+      xlatd->size = sz;
+      auto *ptr = (char *)translate_address(theirs, xlatd->ptr, sz);
+      auto &last = *((int *)ptr);
+      last = ++i == (numBlocks * 2);
+      auto *data = (int *)(ptr + sizeof(int));
       std::fill(data, data + (sz / intSz), (int)sz);
       // and send it back to the host pe for verification/free
-      block_msg_ msg(block, sz, ++i == (numBlocks * 2));
-      while (!their_queue->enqueue(msg))
+      while (!their_queue->enqueue(block, xlatd))
         ;
     }
   }
 
   // pseudo-scheduler loop for short messages
   bool status;
+  ipc::block *block = nullptr;
   auto my_queue = queue_for(mine);
   do {
-    block_msg_ msg;
-    while (!my_queue->dequeue(&msg))
+    while ((block = my_queue->dequeue()) == nullptr)
       ;
-    status = handle_block(&msg);
+    status = handle_block(block);
   } while (status);
 
   CsdExitScheduler();
 }
 
-bool handle_block(void *msg) {
+bool handle_block(ipc::block *block) {
   auto mine = CmiMyNode();
-  auto *typed = (block_msg_ *)msg;
-  CmiPrintf("%d> received %s block!\n", mine, typed->last ? "last" : "a");
+  auto size = block->size;
+  auto last = *((int *)block->ptr);
+  auto *data = (int *)((char *)block->ptr + sizeof(int));
+  CmiPrintf("%d> received %s block!\n", mine, last ? "last" : "a");
   // verify the block
-  auto *block = typed->block;
-  auto *data = (int *)block->ptr;
-  assert(
-      std::all_of(data, data + (typed->size / sizeof(int)),
-                  [&](const int &value) { return value == (int)typed->size; }));
+  assert(std::all_of(data, data + (size / sizeof(int)),
+                     [&](const int &value) { return value == (int)size; }));
   // clean everything up
-  free(data);
+  free(block->ptr);
   delete block;
   // return status
-  return !typed->last;
+  return !last;
 }
 
 void test_init(int argc, char **argv) {

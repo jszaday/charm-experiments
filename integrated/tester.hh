@@ -4,8 +4,8 @@
 #include <algorithm>
 #include <ctime>
 
-#include "../lfq/ipc_lfq.hh"
 #include "pool.hh"
+#include "queue.hh"
 
 CpvDeclare(int, run_handler);
 CpvDeclare(int, initiate_handler);
@@ -33,10 +33,9 @@ struct block_msg_ {
 };
 
 constexpr auto kNumMsgs = 16;
-using ipc_queue = ipc_lfq<block_msg_, kNumMsgs>;
 
 std::map<int, ipc::mempool *> pools_;
-std::map<int, ipc_queue *> queues_;
+std::map<int, ipc::queue *> queues_;
 
 ipc::mempool *pool_for(const int &pe) {
   auto search = pools_.find(pe);
@@ -52,11 +51,11 @@ ipc::mempool *pool_for(const int &pe) {
   return search->second;
 }
 
-ipc_queue *queue_for(const int &pe) {
+ipc::queue *queue_for(const int &pe) {
   auto search = queues_.find(pe);
   if (search == std::end(queues_)) {
     if (pe == CmiMyNode()) {
-      auto ins = queues_.emplace(pe, new ipc_queue(pe));
+      auto ins = queues_.emplace(pe, new ipc::queue(pe));
       assert(ins.second);
       search = ins.first;
     } else {
@@ -70,6 +69,6 @@ void *null_merge_fn(int *size, void *local, void **remote, int count) {
   return local;
 }
 
-bool handle_block(void *msg);
+bool handle_block(ipc::block *);
 
 #endif
