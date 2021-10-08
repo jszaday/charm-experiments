@@ -1,6 +1,7 @@
 CHARMC=$(CHARM_HOME)/bin/charmc
 INCLUDES=-I../../include
-OPTS:=$(OPTS) -O2 -g3 -Wall -std=c++11 -language converse++
+OPTS?=-O2 -g3
+OPTS:=$(OPTS) -Wall -std=c++11 -language converse++
 LIBS:=-latomic -lrt -lxpmem
 
 BINARY=tester

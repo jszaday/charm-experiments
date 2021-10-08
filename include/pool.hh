@@ -38,16 +38,20 @@ struct mempool {
   }
 
   bool lput(void *ptr, const std::size_t &sz) {
-    auto pt = which_pow2(sz);
-    if (pt >= kNumCutOffPoints || sz != kCutOffPoints[pt]) {
+    return this->lput(new block(nullptr, ptr, sz));
+  }
+
+  bool lput(block* blk) {
+    auto pt = which_pow2(blk->size);
+    if (pt >= kNumCutOffPoints || blk->size != kCutOffPoints[pt]) {
       return false;
     }
     auto *head = this->blocks[pt].exchange(nullptr, std::memory_order_acquire);
     if (head == nullptr) {
       return false;
     }
-    auto *next = new block(head, ptr, sz);
-    auto *swap = this->blocks[pt].exchange(next, std::memory_order_release);
+    blk->next = head;
+    auto *swap = this->blocks[pt].exchange(blk, std::memory_order_release);
     assert(swap == nullptr);
     return true;
   }
