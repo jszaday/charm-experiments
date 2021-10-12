@@ -51,32 +51,4 @@ typed_value_ptr<T> make_typed_value(Ts... ts) {
   return typed_value_ptr<T>(new typed_value<T>(std::forward<Ts>(ts)...));
 }
 
-template <typename T, template <typename> typename Wrapper,
-          typename Enable = void>
-struct wrap_;
-
-template <template <typename> typename Wrapper, typename... Ts>
-struct wrap_<std::tuple<Ts...>, Wrapper,
-             typename std::enable_if<(sizeof...(Ts) == 0)>::type> {
-  using type = std::tuple<>;
-};
-
-template <template <typename> typename Wrapper, typename... Ts>
-struct wrap_<std::tuple<Ts...>, Wrapper,
-             typename std::enable_if<(sizeof...(Ts) == 1)>::type> {
-  using type = std::tuple<Wrapper<Ts...>>;
-};
-
-template <template <typename> typename Wrapper, typename T, typename... Ts>
-struct wrap_<std::tuple<T, Ts...>, Wrapper,
-             typename std::enable_if<(sizeof...(Ts) >= 1)>::type> {
- private:
-  using left_t = typename wrap_<std::tuple<T>, Wrapper>::type;
-  using right_t = typename wrap_<std::tuple<Ts...>, Wrapper>::type;
-
- public:
-  using type =
-      decltype(std::tuple_cat(std::declval<left_t>(), std::declval<right_t>()));
-};
-
 #endif
