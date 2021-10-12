@@ -46,4 +46,36 @@ typed_value_ptr<T> msg2typed(CkMessage* msg) {
   return typed_value_ptr<T>(value);
 }
 
+template <typename T, typename... Ts>
+typed_value_ptr<T> make_typed_value(Ts... ts) {
+  return typed_value_ptr<T>(new typed_value<T>(std::forward<Ts>(ts)...));
+}
+
+template <typename T, typename Enable = void>
+struct wrap_;
+
+template <typename... Ts>
+struct wrap_<std::tuple<Ts...>,
+             typename std::enable_if<(sizeof...(Ts) == 0)>::type> {
+  using type = std::tuple<>;
+};
+
+template <typename... Ts>
+struct wrap_<std::tuple<Ts...>,
+             typename std::enable_if<(sizeof...(Ts) == 1)>::type> {
+  using type = std::tuple<typed_value_ptr<Ts...>>;
+};
+
+template <typename T, typename... Ts>
+struct wrap_<std::tuple<T, Ts...>,
+             typename std::enable_if<(sizeof...(Ts) >= 1)>::type> {
+ private:
+  using left_t = typename wrap_<std::tuple<T>>::type;
+  using right_t = typename wrap_<std::tuple<Ts...>>::type;
+
+ public:
+  using type =
+      decltype(std::tuple_cat(std::declval<left_t>(), std::declval<right_t>()));
+};
+
 #endif

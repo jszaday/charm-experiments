@@ -34,17 +34,17 @@ std::array<std::type_index, N> make_type_list_(void) {
 }
 
 template <typename T>
-struct wrapped_ {
+struct tuplify_ {
   using type = std::tuple<T>;
 };
 
 template <>
-struct wrapped_<void> {
-  using type = std::tuple<>;
+struct tuplify_<std::tuple<>> {
+  using type = std::tuple<void>;
 };
 
 template <typename... Ts>
-struct wrapped_<std::tuple<Ts...>> {
+struct tuplify_<std::tuple<Ts...>> {
   using type = std::tuple<Ts...>;
 };
 

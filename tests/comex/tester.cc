@@ -11,8 +11,8 @@ class test_main : public CBase_test_main {
  public:
   // checks whether the "accepts" function is working as expected
   void check_accepts(void) {
-    auto* com =
-        (component_base_*)(new component<std::tuple<int, double>, void>(0x1));
+    using com_t = component<std::tuple<int, double>, void>;
+    auto* com = (component_base_*)(new com_t(0x1));
     CkEnforce(com->accepts(0, typeid(int)));
     CkEnforce(com->accepts(1, typeid(double)));
     CkEnforce(!com->accepts(1, typeid(int)));
