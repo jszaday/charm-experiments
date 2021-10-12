@@ -103,7 +103,7 @@ class component : public component_base_ {
         self->stage_action(search);
       }
     } else {
-      self->on_invalidation<I>();
+      self->on_invalidation_<I>();
     }
   }
 
@@ -120,12 +120,14 @@ class component : public component_base_ {
 
  private:
   template<std::size_t I>
-  void on_invalidation(void) {
+  void on_invalidation_(void) {
     CkAbort("-- not implemented --");
   }
 
   void buffer_ready_set_(value_set&& set) {
-    this->accepted_.emplace_back(std::move(set));
+    // this should be consistent with "find_ready"
+    // and the opposite of "find_gap"
+    this->accepted_.emplace_front(std::move(set));
     QdCreate(n_inputs_);
   }
 
@@ -139,7 +141,7 @@ class component : public component_base_ {
         buffer_ready_set_(std::move(set));
       }
     } else {
-      self->on_invalidation<I>();
+      self->on_invalidation_<I>();
     }
   }
 
