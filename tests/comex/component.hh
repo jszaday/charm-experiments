@@ -7,6 +7,11 @@
 
 #include "values.hh"
 
+class connector_ {
+  std::size_t com;
+  std::size_t port;
+};
+
 class component_base_ {
  public:
   const std::size_t id;
@@ -51,7 +56,7 @@ class component : public component_base_ {
  public:
   using in_type = typename tuplify_<Inputs>::type;
   using out_type = typename tuplify_<Outputs>::type;
-  using value_set = typename wrap_<in_type>::type;
+  using value_set = typename wrap_<in_type, typed_value_ptr>::type;
 
  private:
   template <std::size_t I>
@@ -119,7 +124,7 @@ class component : public component_base_ {
   }
 
  private:
-  template<std::size_t I>
+  template <std::size_t I>
   void on_invalidation_(void) {
     CkAbort("-- not implemented --");
   }
