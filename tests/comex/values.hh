@@ -34,13 +34,16 @@ struct typed_value : public value {
   }
 };
 
+template <typename T>
+using typed_value_ptr = std::unique_ptr<typed_value<T>>;
+
 // NOTE ( this would be implemented via ser/des )
 template <typename T>
-std::unique_ptr<typed_value<T>> msg2typed(CkMessage* msg) {
+typed_value_ptr<T> msg2typed(CkMessage* msg) {
   auto* dataMsg = (CkDataMsg*)msg;
   auto* value = new typed_value<T>(*((T*)dataMsg->data));
   delete dataMsg;
-  return std::unique_ptr<typed_value<T>>(value);
+  return typed_value_ptr<T>(value);
 }
 
 #endif

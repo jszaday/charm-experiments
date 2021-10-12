@@ -1,6 +1,5 @@
-#include "tester.decl.h"
-
 #include "component.hh"
+#include "tester.decl.h"
 
 constexpr auto kNumElts = 4;
 constexpr auto kNumIters = 8;

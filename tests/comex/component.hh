@@ -9,20 +9,37 @@ class component_base_ {
   const std::size_t n_inputs;
   const std::size_t n_outputs;
 
+  using acceptor_fn_t = void (*)(component_base_*, CkMessage*);
+
+ private:
+  // effectively a vtable of typed acceptors for each port
+  const acceptor_fn_t* acceptors;
+  const std::type_index* in_types;
+
  protected:
   component_base_(std::size_t id_, std::size_t n_inputs_,
-                  std::size_t n_outputs_)
-      : id(id_), n_inputs(n_inputs_), n_outputs(n_outputs_) {}
+                  std::size_t n_outputs_, const acceptor_fn_t* acceptors_,
+                  const std::type_index* in_types_)
+      : id(id_),
+        n_inputs(n_inputs_),
+        n_outputs(n_outputs_),
+        acceptors(acceptors_),
+        in_types(in_types_) {}
 
  public:
   virtual ~component_base_() {}
 
   // we need a way to accept arbitrary messages
-  virtual void accept(std::size_t port, CkMessage* msg) = 0;
+  inline void accept(std::size_t port, CkMessage* msg) {
+    CkAssertMsg(port < this->n_inputs, "port out of range!");
+    (this->acceptors[port])(this, msg);
+  }
 
   // checks whether a given port can accept a value with the type
   // given by idx, this only used in strict/error-checking modes
-  virtual bool accepts(std::size_t port, const std::type_index& idx) const = 0;
+  inline bool accepts(std::size_t port, const std::type_index& idx) const {
+    return (port < this->n_inputs) && (idx == this->in_types[port]);
+  }
 };
 
 template <typename Inputs, typename Outputs>
@@ -37,37 +54,32 @@ class component : public component_base_ {
 
   static constexpr std::size_t n_inputs_ = std::tuple_size<in_type>::value;
   static constexpr std::size_t n_outputs_ = std::tuple_size<out_type>::value;
-  using acceptor_fn_t = void (*)(component<Inputs, Outputs>*, CkMessage*);
 
  public:
   using in_type_array_t = std::array<std::type_index, n_inputs_>;
   using acceptor_array_t = std::array<acceptor_fn_t, n_inputs_>;
 
   static in_type_array_t in_types;
-  // effectively a vtable of typed acceptors for each port
   static acceptor_array_t acceptors;
 
-  component(std::size_t id_) : component_base_(id_, n_inputs_, n_outputs_) {}
+  component(std::size_t id_)
+      : component_base_(id_, n_inputs_, n_outputs_, acceptors.data(),
+                        in_types.data()) {}
 
-  // NOTE ( in reality, this would do something with the value )
   template <std::size_t I>
-  static void accept(component<Inputs, Outputs>* self, CkMessage* msg) {
-    auto val = msg2typed<in_elt_t<I>>(msg);
-
+  static void accept(component<Inputs, Outputs>* self,
+                     typed_value_ptr<in_elt_t<I>>&& val) {
+    // NOTE ( in reality, this would do something with the value )
     std::stringstream ss;
     ss << **val;
     auto str = ss.str();
-
     CkPrintf("com%lu> got value %s!\n", self->id, str.c_str());
   }
 
-  virtual void accept(std::size_t port, CkMessage* msg) override {
-    (*acceptors[port])(this, msg);
-  }
-
-  virtual bool accepts(std::size_t port,
-                       const std::type_index& idx) const override {
-    return (port < n_inputs_) && (idx == in_types[port]);
+  template <std::size_t I>
+  static void accept(component_base_* base, CkMessage* msg) {
+    auto* self = static_cast<component<Inputs, Outputs>*>(base);
+    self->accept<I>(self, msg2typed<in_elt_t<I>>(msg));
   }
 
  private:
@@ -81,7 +93,7 @@ class component : public component_base_ {
   static typename std::enable_if<(I >= 1)>::type make_acceptors_(
       acceptor_array_t& arr) {
     new (&arr[I]) acceptor_fn_t(accept<I>);
-    make_acceptors_<I - 1>(arr);
+    make_acceptors_<(I - 1)>(arr);
   }
 
   static acceptor_array_t make_acceptors_(void) {
