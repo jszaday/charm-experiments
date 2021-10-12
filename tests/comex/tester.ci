@@ -1,0 +1,11 @@
+mainmodule tester {
+    mainchare test_main {
+        entry [nokeep] test_main(CkArgMsg*);
+    };
+
+    array [1D] exchanger {
+        entry exchanger(void);
+
+        entry void accept(CkDataMsg*);
+    }
+}
