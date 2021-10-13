@@ -11,6 +11,8 @@ struct value {
   virtual const std::type_index* get_type(void) const { return nullptr; }
 };
 
+using value_ptr = std::unique_ptr<value>;
+
 template <typename T>
 struct typed_value;
 
@@ -55,6 +57,11 @@ typed_value_ptr<T> msg2typed(CkMessage* msg) {
 template <typename T, typename... Ts>
 typed_value_ptr<T> make_typed_value(Ts... ts) {
   return typed_value_ptr<T>(new typed_value<T>(std::forward<Ts>(ts)...));
+}
+
+template <typename T>
+typed_value_ptr<T> cast_value(value_ptr&& val) {
+  return typed_value_ptr<T>(static_cast<typed_value<T>*>(val.release()));
 }
 
 #endif

@@ -19,41 +19,63 @@ class component_base_ {
   const std::size_t n_inputs;
   const std::size_t n_outputs;
 
-  using acceptor_fn_t = void (*)(component_base_*, CkMessage*);
+  using m_accept_fn_t = void (*)(component_base_*, CkMessage*);
+  using v_accept_fn_t = void (*)(component_base_*, value_ptr&&);
 
  private:
-  // effectively a vtable of typed acceptors for each port
-  const acceptor_fn_t* acceptors;
+  // effectively vtables of typed acceptors for each port
+  const m_accept_fn_t* m_acceptors;
+  const v_accept_fn_t* v_acceptors;
+
+#if HYPERCOMM_ERROR_CHECKING
   const std::type_index* in_types;
+#endif
 
  protected:
   bool active;
   bool persistent;
 
+#if HYPERCOMM_ERROR_CHECKING
   component_base_(std::size_t id_, std::size_t n_inputs_,
-                  std::size_t n_outputs_, const acceptor_fn_t* acceptors_,
+                  std::size_t n_outputs_, const m_accept_fn_t* m_acceptors_,
+                  const v_accept_fn_t* v_acceptors_,
                   const std::type_index* in_types_)
       : id(id_),
         active(false),
         n_inputs(n_inputs_),
         n_outputs(n_outputs_),
-        acceptors(acceptors_),
+        m_acceptors(m_acceptors_),
+        v_acceptors(v_acceptors_),
         in_types(in_types_) {}
+#endif
 
  public:
   virtual ~component_base_() {}
 
+  inline void accept(std::size_t port, value_ptr&& val) {
+#if HYPERCOMM_ERROR_CHECKING
+    auto* ty = val->get_type();
+    if (!(ty && this->accepts(port, *ty))) {
+      CkAbort("com%lu> invalid value for port %lu, %s", this->id, port,
+              (ty ? ty->name() : "(nil)"));
+    }
+#endif
+    (this->v_acceptors[port])(this, std::move(val));
+  }
+
   // we need a way to accept arbitrary messages
   inline void accept(std::size_t port, CkMessage* msg) {
     CkAssertMsg(port < this->n_inputs, "port out of range!");
-    (this->acceptors[port])(this, msg);
+    (this->m_acceptors[port])(this, msg);
   }
 
+#if HYPERCOMM_ERROR_CHECKING
   // checks whether a given port can accept a value with the type
   // given by idx, this only used in strict/error-checking modes
   inline bool accepts(std::size_t port, const std::type_index& idx) const {
     return (port < this->n_inputs) && (idx == this->in_types[port]);
   }
+#endif
 };
 
 template <typename Inputs, typename Outputs>
@@ -82,15 +104,18 @@ class component : public component_base_ {
   outgoing_type outgoing_;
 
  public:
+  using m_accept_array_t = std::array<m_accept_fn_t, n_inputs_>;
+  using v_accept_array_t = std::array<v_accept_fn_t, n_inputs_>;
+  static m_accept_array_t m_acceptors;
+  static v_accept_array_t v_acceptors;
+#if HYPERCOMM_ERROR_CHECKING
   using in_type_array_t = std::array<std::type_index, n_inputs_>;
-  using acceptor_array_t = std::array<acceptor_fn_t, n_inputs_>;
-
   static in_type_array_t in_types;
-  static acceptor_array_t acceptors;
+#endif
 
   component(std::size_t id_)
-      : component_base_(id_, n_inputs_, n_outputs_, acceptors.data(),
-                        in_types.data()) {}
+      : component_base_(id_, n_inputs_, n_outputs_, m_acceptors.data(),
+                        v_acceptors.data(), in_types.data()) {}
 
   template <std::size_t I>
   static void accept(component<Inputs, Outputs>* self,
@@ -125,6 +150,12 @@ class component : public component_base_ {
   static void accept(component_base_* base, CkMessage* msg) {
     auto* self = static_cast<component<Inputs, Outputs>*>(base);
     self->accept<I>(self, msg2typed<in_elt_t<I>>(msg));
+  }
+
+  template <std::size_t I>
+  static void accept(component_base_* base, value_ptr&& val) {
+    auto* self = static_cast<component<Inputs, Outputs>*>(base);
+    self->accept<I>(self, cast_value<in_elt_t<I>>(std::move(val)));
   }
 
   virtual out_set action(in_set&) = 0;
@@ -221,37 +252,47 @@ class component : public component_base_ {
     return (bool)std::get<I>(set) && is_ready_<(I - 1)>(set);
   }
 
-  template <std::size_t I>
+  template <std::size_t I, typename Array>
   inline static typename std::enable_if<(I == 0)>::type make_acceptors_(
-      acceptor_array_t& arr) {
-    new (&arr[I]) acceptor_fn_t(accept<I>);
+      Array& arr) {
+    using elt_t = typename Array::value_type;
+    new (&arr[I]) elt_t(accept<I>);
   }
 
-  template <std::size_t I>
+  template <std::size_t I, typename Array>
   inline static typename std::enable_if<(I >= 1)>::type make_acceptors_(
-      acceptor_array_t& arr) {
-    new (&arr[I]) acceptor_fn_t(accept<I>);
-    make_acceptors_<(I - 1)>(arr);
+      Array& arr) {
+    using elt_t = typename Array::value_type;
+    new (&arr[I]) elt_t(accept<I>);
+    make_acceptors_<(I - 1), Array>(arr);
   }
 
-  inline static acceptor_array_t make_acceptors_(void) {
-    using type = acceptor_array_t;
+  template <typename Array>
+  inline static Array make_acceptors_(void) {
+    using type = Array;
     std::aligned_storage<sizeof(type), alignof(type)> storage;
     auto* arr = reinterpret_cast<type*>(&storage);
-    make_acceptors_<n_inputs_ - 1>(*arr);
+    make_acceptors_<n_inputs_ - 1, type>(*arr);
     return *arr;
   }
 };
 
+#if HYPERCOMM_ERROR_CHECKING
 template <typename Inputs, typename Outputs>
 typename component<Inputs, Outputs>::in_type_array_t
     component<Inputs, Outputs>::in_types =
         make_type_list_<component<Inputs, Outputs>::in_type,
                         component<Inputs, Outputs>::n_inputs_>();
+#endif
 
 template <typename Inputs, typename Outputs>
-typename component<Inputs, Outputs>::acceptor_array_t
-    component<Inputs, Outputs>::acceptors =
-        component<Inputs, Outputs>::make_acceptors_();
+typename component<Inputs, Outputs>::m_accept_array_t
+    component<Inputs, Outputs>::m_acceptors =
+        component<Inputs, Outputs>::make_acceptors_<m_accept_array_t>();
+
+template <typename Inputs, typename Outputs>
+typename component<Inputs, Outputs>::v_accept_array_t
+    component<Inputs, Outputs>::v_acceptors =
+        component<Inputs, Outputs>::make_acceptors_<v_accept_array_t>();
 
 #endif

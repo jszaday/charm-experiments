@@ -9,6 +9,8 @@
 #include <type_traits>
 #include <typeindex>
 
+#include "config.hh"
+
 template <typename Tuple, std::size_t N, std::size_t I>
 inline typename std::enable_if<I == 0>::type make_type_list_(
     std::array<std::type_index, N>& arr) {

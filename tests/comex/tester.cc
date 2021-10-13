@@ -15,8 +15,7 @@ struct test_component : public component<std::tuple<Ts...>, std::tuple<>> {
 
   static_assert(sizeof...(Ts) == 2, "expected exactly two values");
 
-  test_component(std::size_t id_)
-      : parent_t(id_) {
+  test_component(std::size_t id_) : parent_t(id_) {
     this->active = true;
     this->persistent = true;
   }
