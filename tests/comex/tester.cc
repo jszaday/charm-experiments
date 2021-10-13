@@ -7,14 +7,14 @@ constexpr auto kNumIters = 8;
 template <typename T>
 struct default_data_;
 
-template<>
+template <>
 struct default_data_<double> {
   static const double value = 0.12345678;
 };
 
 const double default_data_<double>::value;
 
-template<>
+template <>
 struct default_data_<int> {
   static const int value = 87654321;
 };
@@ -42,7 +42,7 @@ struct test_component : public component<std::tuple<Ts...>, std::tuple<>> {
   }
 };
 
-template<typename T>
+template <typename T>
 struct producer : public component<void, T> {
   using parent_t = component<void, T>;
   using in_set = typename parent_t::in_set;
@@ -62,12 +62,16 @@ class test_main : public CBase_test_main {
  public:
   // checks whether the "accepts" function is working as expected
   void check_accepts(void) {
-    using com_t = test_component<int, double>;
-    auto* com = (component_base_*)(new com_t(0x1));
+    using consumer_t = test_component<int, double>;
+    auto* com = new consumer_t(0x1);
     CkEnforce(com->accepts(0, typeid(int)));
     CkEnforce(com->accepts(1, typeid(double)));
     CkEnforce(!com->accepts(1, typeid(int)));
     CkEnforce(!com->accepts(2, typeid(int)));
+
+    auto* prod = new producer<int>(0x0);
+    prod->output_to<0, 0>(*com);
+
     delete com;
   }
 
@@ -115,7 +119,8 @@ class exchanger : public CBase_exchanger {
       if (((even == dstCom) && !dstPort) || ((odd == dstCom) && dstPort)) {
         msg = CkDataMsg::buildNew(sizeof(int), &default_data_<int>::value);
       } else {
-        msg = CkDataMsg::buildNew(sizeof(double), &default_data_<double>::value);
+        msg =
+            CkDataMsg::buildNew(sizeof(double), &default_data_<double>::value);
       }
       // encode the destination in a legible way
       auto refnum =

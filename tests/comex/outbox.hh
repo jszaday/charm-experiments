@@ -52,6 +52,9 @@ struct outbox_<std::tuple<Ts...>> {
 
   using tuple_type = std::tuple<Ts...>;
 
+  template <size_t I>
+  using tuple_elt_t = typename std::tuple_element<I, tuple_type>::type;
+
   template <typename T>
   using deque_type = std::deque<T>;
 
@@ -97,6 +100,24 @@ struct outbox_<std::tuple<Ts...>> {
   }
 
  public:
+  template <std::size_t I>
+  inline void try_flush(std::nullptr_t) {
+    auto& buf = std::get<I>(this->buffer_);
+    auto& con = std::get<I>(this->connectors_);
+    while (!buf.empty()) {
+      con.relay(std::move(buf.front()));
+      buf.pop_front();
+    }
+  }
+
+  template <std::size_t I>
+  inline bool connect_to(std::size_t com, std::size_t port) {
+    auto& con = std::get<I>(this->connectors_);
+    auto ready = con.ready();
+    new (&con) connector_<tuple_elt_t<I>>(com, port);
+    return ready;
+  }
+
   template <std::size_t I>
   inline buffer_elt_t<I>& get(void) {
     return std::get<I>(this->buffer_);

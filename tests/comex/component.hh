@@ -85,10 +85,13 @@ class component : public component_base_ {
   using in_set = typename wrap_<in_type, typed_value_ptr>::type;
   using out_set = typename wrap_<out_type, typed_value_ptr>::type;
 
- private:
   template <std::size_t I>
   using in_elt_t = typename std::tuple_element<I, in_type>::type;
 
+  template <std::size_t O>
+  using out_elt_t = typename std::tuple_element<O, out_type>::type;
+
+ private:
   static constexpr std::size_t n_inputs_ = std::tuple_size<in_type>::value;
   static constexpr std::size_t n_outputs_ = std::tuple_size<out_type>::value;
   static_assert(n_inputs_ >= 1, "expected at least one input!");
@@ -154,6 +157,20 @@ class component : public component_base_ {
   static void accept(component_base_* base, value_ptr&& val) {
     auto* self = static_cast<component<Inputs, Outputs>*>(base);
     self->accept<I>(self, cast_value<in_elt_t<I>>(std::move(val)));
+  }
+
+  template <std::size_t O, std::size_t I, typename Input_, typename Output_>
+  void output_to(const component<Input_, Output_>& peer) {
+    static_assert(
+        std::is_same<out_elt_t<O>,
+                     typename component<Input_, Output_>::in_elt_t<I>>::value,
+        "component types must be compatible");
+    bool prev = (this->outgoing_).connect_to<O>(peer.id, I);
+    CkAssertMsg(!(this->active && prev),
+                "component must be offline to change outbound connections");
+    if (this->active) {
+      (this->outgoing_).try_flush<O>(nullptr);
+    }
   }
 
   inline bool collectible(void) const {
