@@ -4,8 +4,22 @@
 constexpr auto kNumElts = 4;
 constexpr auto kNumIters = 8;
 
-auto intData = 87654321;
-auto doubleData = 0.12345678;
+template <typename T>
+struct default_data_;
+
+template<>
+struct default_data_<double> {
+  static const double value = 0.12345678;
+};
+
+const double default_data_<double>::value;
+
+template<>
+struct default_data_<int> {
+  static const int value = 87654321;
+};
+
+const int default_data_<int>::value;
 
 template <typename... Ts>
 struct test_component : public component<std::tuple<Ts...>, std::tuple<>> {
@@ -28,8 +42,9 @@ struct test_component : public component<std::tuple<Ts...>, std::tuple<>> {
   }
 };
 
-struct producer : public component<void, int> {
-  using parent_t = component<void, int>;
+template<typename T>
+struct producer : public component<void, T> {
+  using parent_t = component<void, T>;
   using in_set = typename parent_t::in_set;
   using out_set = typename parent_t::out_set;
 
@@ -39,7 +54,7 @@ struct producer : public component<void, int> {
   }
 
   virtual out_set action(in_set& set) override {
-    return { make_typed_value<int>(420) };
+    return {make_typed_value<T>(default_data_<T>::value)};
   }
 };
 
@@ -98,9 +113,9 @@ class exchanger : public CBase_exchanger {
       auto dstCom = (it % 2 == 0) ? even : odd;
       // create a message of the appropriate type for the dst port
       if (((even == dstCom) && !dstPort) || ((odd == dstCom) && dstPort)) {
-        msg = CkDataMsg::buildNew(sizeof(int), &intData);
+        msg = CkDataMsg::buildNew(sizeof(int), &default_data_<int>::value);
       } else {
-        msg = CkDataMsg::buildNew(sizeof(double), &doubleData);
+        msg = CkDataMsg::buildNew(sizeof(double), &default_data_<double>::value);
       }
       // encode the destination in a legible way
       auto refnum =
