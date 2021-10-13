@@ -12,6 +12,9 @@ struct value {
 };
 
 template <typename T>
+struct typed_value;
+
+template <typename T>
 struct typed_value : public value {
   std::aligned_storage<sizeof(T), alignof(T)> storage_;
 
@@ -33,6 +36,9 @@ struct typed_value : public value {
     return &tIdx;
   }
 };
+
+template <>
+struct typed_value<void> : public value {};
 
 template <typename T>
 using typed_value_ptr = std::unique_ptr<typed_value<T>>;

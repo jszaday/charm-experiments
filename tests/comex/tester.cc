@@ -7,11 +7,33 @@ constexpr auto kNumIters = 8;
 auto intData = 87654321;
 auto doubleData = 0.12345678;
 
+template <typename... Ts>
+struct test_component : public component<std::tuple<Ts...>, std::tuple<>> {
+  using parent_t = component<std::tuple<Ts...>, std::tuple<>>;
+  using in_set = typename parent_t::in_set;
+  using out_set = typename parent_t::out_set;
+
+  static_assert(sizeof...(Ts) == 2, "expected exactly two values");
+
+  test_component(std::size_t id_)
+      : parent_t(id_) {
+    this->active = true;
+    this->persistent = true;
+  }
+
+  virtual out_set action(in_set& set) override {
+    std::stringstream ss;
+    ss << "{" << **(std::get<0>(set)) << "," << **(std::get<1>(set)) << "}";
+    CkPrintf("com%d> recvd value set %s!\n", this->id, ss.str().c_str());
+    return {};
+  }
+};
+
 class test_main : public CBase_test_main {
  public:
   // checks whether the "accepts" function is working as expected
   void check_accepts(void) {
-    using com_t = component<std::tuple<int, double>, void>;
+    using com_t = test_component<int, double>;
     auto* com = (component_base_*)(new com_t(0x1));
     CkEnforce(com->accepts(0, typeid(int)));
     CkEnforce(com->accepts(1, typeid(double)));
@@ -43,11 +65,9 @@ class exchanger : public CBase_exchanger {
 
     // depending on whether we're even or odd -- xchg the port types
     if ((mine % 2) == 0) {
-      this->components_.emplace(
-          mine, new component<std::tuple<int, double>, void>(mine));
+      this->components_.emplace(mine, new test_component<int, double>(mine));
     } else {
-      this->components_.emplace(
-          mine, new component<std::tuple<double, int>, void>(mine));
+      this->components_.emplace(mine, new test_component<double, int>(mine));
     }
 
     this->do_sends();

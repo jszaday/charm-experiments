@@ -3,14 +3,15 @@
 
 #include <ck.h>
 
-#include <deque>
-
+#include "outbox.hh"
 #include "values.hh"
 
 class connector_ {
   std::size_t com;
   std::size_t port;
 };
+
+enum status_ { kCompletion, kInvalidation };
 
 class component_base_ {
  public:
@@ -26,10 +27,14 @@ class component_base_ {
   const std::type_index* in_types;
 
  protected:
+  bool active;
+  bool persistent;
+
   component_base_(std::size_t id_, std::size_t n_inputs_,
                   std::size_t n_outputs_, const acceptor_fn_t* acceptors_,
                   const std::type_index* in_types_)
       : id(id_),
+        active(false),
         n_inputs(n_inputs_),
         n_outputs(n_outputs_),
         acceptors(acceptors_),
@@ -56,7 +61,9 @@ class component : public component_base_ {
  public:
   using in_type = typename tuplify_<Inputs>::type;
   using out_type = typename tuplify_<Outputs>::type;
-  using value_set = typename wrap_<in_type, typed_value_ptr>::type;
+
+  using in_set = typename wrap_<in_type, typed_value_ptr>::type;
+  using out_set = typename wrap_<out_type, typed_value_ptr>::type;
 
  private:
   template <std::size_t I>
@@ -67,10 +74,12 @@ class component : public component_base_ {
   static_assert(n_inputs_ >= 1, "expected at least one input!");
 
  protected:
-  using accepted_type = std::deque<value_set>;
-  using accepted_iterator = typename accepted_type::iterator;
+  using outgoing_type = outbox_<out_set>;
+  using incoming_type = std::deque<in_set>;
+  using incoming_iterator = typename incoming_type::iterator;
 
-  accepted_type accepted_;
+  incoming_type incoming_;
+  outgoing_type outgoing_;
 
  public:
   using in_type_array_t = std::array<std::type_index, n_inputs_>;
@@ -92,13 +101,13 @@ class component : public component_base_ {
     } else if (val) {
       // look for a set missing this value
       auto search = self->find_gap_<I>();
-      const auto gapless = search == std::end(self->accepted_);
+      const auto gapless = search == std::end(self->incoming_);
       // if we couldn't find one:
       if (gapless) {
         // create a new set
-        self->accepted_.emplace_front();
+        self->incoming_.emplace_front();
         // then update the search iterator
-        search = self->accepted_.begin();
+        search = self->incoming_.begin();
       }
       // update the value in the set
       std::get<I>(*search) = std::move(val);
@@ -118,21 +127,28 @@ class component : public component_base_ {
     self->accept<I>(self, msg2typed<in_elt_t<I>>(msg));
   }
 
+  virtual out_set action(in_set&) = 0;
+
  protected:
-  inline static bool is_ready(const value_set& set) {
+  inline static bool is_ready(const in_set& set) {
     return is_ready_<n_inputs_ - 1>(set);
   }
 
  private:
+  template <status_ Status>
+  void notify_listeners_(void) {
+    CkPrintf("-- not implemented --\n");
+  }
+
   template <std::size_t I>
   void on_invalidation_(void) {
     CkAbort("-- not implemented --");
   }
 
-  void buffer_ready_set_(value_set&& set) {
+  void buffer_ready_set_(in_set&& set) {
     // this should be consistent with "find_ready"
     // and the opposite of "find_gap"
-    this->accepted_.emplace_front(std::move(set));
+    this->incoming_.emplace_front(std::move(set));
     QdCreate(n_inputs_);
   }
 
@@ -141,7 +157,7 @@ class component : public component_base_ {
   direct_stage(component<Inputs, Outputs>* self,
                typed_value_ptr<in_elt_t<I>>&& val) {
     if (val) {
-      value_set set(std::move(val));
+      in_set set(std::move(val));
       if (!self->stage_action(set)) {
         buffer_ready_set_(std::move(set));
       }
@@ -157,44 +173,51 @@ class component : public component_base_ {
     CkAbort("-- unreachable --");
   }
 
-  inline void stage_action(const accepted_iterator& search) {
+  inline void stage_action(const incoming_iterator& search) {
     if (this->stage_action(*search)) {
-      this->accepted_.erase(search);
+      this->incoming_.erase(search);
       QdProcess(n_inputs_);
     }
   }
 
   // returns true if the set was consumed
-  inline bool stage_action(value_set& set) {
-    std::stringstream ss;
-    ss << "{" << **(std::get<0>(set)) << "," << **(std::get<1>(set)) << "}";
-    CkPrintf("com%d> recvd value set %s!\n", this->id, ss.str().c_str());
-    return true;
+  inline bool stage_action(in_set& set) {
+    if (this->active) {
+      auto res = this->action(set);
+      this->outgoing_.unspool(res);
+      this->active = this->persistent;
+      if (!this->active) {
+        this->notify_listeners_<kCompletion>();
+      }
+      return true;
+    } else {
+      return false;
+    }
   }
 
   template <std::size_t I>
-  inline accepted_iterator find_gap_(void) {
-    if (!this->accepted_.empty()) {
-      auto search = this->accepted_.rbegin();
-      for (; search != this->accepted_.rend(); search++) {
+  inline incoming_iterator find_gap_(void) {
+    if (!this->incoming_.empty()) {
+      auto search = this->incoming_.rbegin();
+      for (; search != this->incoming_.rend(); search++) {
         if (!std::get<I>(*search)) {
           return --search.base();
         }
       }
     }
 
-    return std::end(this->accepted_);
+    return std::end(this->incoming_);
   }
 
   template <std::size_t I>
   inline static typename std::enable_if<I == 0, bool>::type is_ready_(
-      const value_set& set) {
+      const in_set& set) {
     return (bool)std::get<I>(set);
   }
 
   template <std::size_t I>
   inline static typename std::enable_if<I >= 1, bool>::type is_ready_(
-      const value_set& set) {
+      const in_set& set) {
     return (bool)std::get<I>(set) && is_ready_<(I - 1)>(set);
   }
 
