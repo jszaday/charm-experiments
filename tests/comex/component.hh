@@ -4,12 +4,6 @@
 #include <ck.h>
 
 #include "outbox.hh"
-#include "values.hh"
-
-class connector_ {
-  std::size_t com;
-  std::size_t port;
-};
 
 enum status_ { kCompletion, kInvalidation };
 
@@ -22,6 +16,11 @@ class component_base_ {
   using m_accept_fn_t = void (*)(component_base_*, CkMessage*);
   using v_accept_fn_t = void (*)(component_base_*, value_ptr&&);
 
+ protected:
+  bool active;
+  bool activated;
+  bool persistent;
+
  private:
   // effectively vtables of typed acceptors for each port
   const m_accept_fn_t* m_acceptors;
@@ -32,18 +31,17 @@ class component_base_ {
 #endif
 
  protected:
-  bool active;
-  bool persistent;
-
 #if HYPERCOMM_ERROR_CHECKING
   component_base_(std::size_t id_, std::size_t n_inputs_,
                   std::size_t n_outputs_, const m_accept_fn_t* m_acceptors_,
                   const v_accept_fn_t* v_acceptors_,
                   const std::type_index* in_types_)
       : id(id_),
-        active(false),
         n_inputs(n_inputs_),
         n_outputs(n_outputs_),
+        active(false),
+        activated(false),
+        persistent(false),
         m_acceptors(m_acceptors_),
         v_acceptors(v_acceptors_),
         in_types(in_types_) {}
@@ -82,7 +80,7 @@ template <typename Inputs, typename Outputs>
 class component : public component_base_ {
  public:
   using in_type = typename tuplify_<Inputs>::type;
-  using out_type = typename tuplify_<Outputs>::type;
+  using out_type = typename tuplify_<Outputs, true>::type;
 
   using in_set = typename wrap_<in_type, typed_value_ptr>::type;
   using out_set = typename wrap_<out_type, typed_value_ptr>::type;
@@ -156,6 +154,10 @@ class component : public component_base_ {
   static void accept(component_base_* base, value_ptr&& val) {
     auto* self = static_cast<component<Inputs, Outputs>*>(base);
     self->accept<I>(self, cast_value<in_elt_t<I>>(std::move(val)));
+  }
+
+  inline bool collectible(void) const {
+    return this->activated && !this->active && this->outbox_.empty();
   }
 
   virtual out_set action(in_set&) = 0;

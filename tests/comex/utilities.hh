@@ -35,18 +35,19 @@ std::array<std::type_index, N> make_type_list_(void) {
   return *arr;
 }
 
-template <typename T>
+template <typename T, bool Empty = false>
 struct tuplify_ {
   using type = std::tuple<T>;
 };
 
-template <>
-struct tuplify_<std::tuple<>> {
-  using type = std::tuple<void>;
+template <bool Empty>
+struct tuplify_<std::tuple<>, Empty> {
+  using type =
+      typename std::conditional<Empty, std::tuple<>, std::tuple<void>>::type;
 };
 
-template <typename... Ts>
-struct tuplify_<std::tuple<Ts...>> {
+template <bool Empty, typename... Ts>
+struct tuplify_<std::tuple<Ts...>, Empty> {
   using type = std::tuple<Ts...>;
 };
 
