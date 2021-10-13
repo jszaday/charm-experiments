@@ -8,9 +8,29 @@
 
 template <typename T>
 struct connector_ {
-  bool ready_;
+  enum options_ { kInvalid, kWire };
 
-  connector_(void) : ready_(false) {}
+  options_ which_;
+
+  union u_state_ {
+    struct s_wire_ {
+      std::size_t com;
+      std::size_t port;
+
+      s_wire_(std::size_t com_, std::size_t port_) : com(com_), port(port_) {}
+    } wire_;
+
+    u_state_(tags::no_init) {}
+
+    u_state_(std::size_t com, std::size_t port) : wire_(com, port) {}
+  } state_;
+
+  connector_(void) : which_(kInvalid), state_(tags::no_init()) {}
+
+  connector_(std::size_t com, std::size_t port)
+      : which_(kWire), state_(com, port) {}
+
+  inline bool ready(void) const { return this->which_ != kInvalid; }
 
   void relay(T&&) {}
 };
@@ -48,7 +68,7 @@ struct outbox_<std::tuple<Ts...>> {
   template <std::size_t I>
   inline void deliver_(tuple_type& tuple) {
     auto& con = std::get<I>(this->connectors_);
-    if (con.ready_) {
+    if (con.ready()) {
       con.relay(std::move(std::get<I>(tuple)));
     } else {
       (std::get<I>(this->buffer_)).emplace_back(std::move(std::get<I>(tuple)));

@@ -54,6 +54,12 @@ typed_value_ptr<T> msg2typed(CkMessage* msg) {
   return typed_value_ptr<T>(value);
 }
 
+template <>
+typed_value_ptr<void> msg2typed<void>(CkMessage* msg) {
+  CkFreeMsg(msg);
+  return typed_value_ptr<void>(new typed_value<void>());
+}
+
 template <typename T, typename... Ts>
 typed_value_ptr<T> make_typed_value(Ts... ts) {
   return typed_value_ptr<T>(new typed_value<T>(std::forward<Ts>(ts)...));

@@ -16,8 +16,8 @@ struct test_component : public component<std::tuple<Ts...>, std::tuple<>> {
   static_assert(sizeof...(Ts) == 2, "expected exactly two values");
 
   test_component(std::size_t id_) : parent_t(id_) {
-    this->active = true;
     this->persistent = true;
+    this->activate();
   }
 
   virtual out_set action(in_set& set) override {
@@ -25,6 +25,21 @@ struct test_component : public component<std::tuple<Ts...>, std::tuple<>> {
     ss << "{" << **(std::get<0>(set)) << "," << **(std::get<1>(set)) << "}";
     CkPrintf("com%d> recvd value set %s!\n", this->id, ss.str().c_str());
     return {};
+  }
+};
+
+struct producer : public component<void, int> {
+  using parent_t = component<void, int>;
+  using in_set = typename parent_t::in_set;
+  using out_set = typename parent_t::out_set;
+
+  producer(std::size_t id_) : parent_t(id_) {
+    this->persistent = true;
+    this->activate();
+  }
+
+  virtual out_set action(in_set& set) override {
+    return { make_typed_value<int>(420) };
   }
 };
 

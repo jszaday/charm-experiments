@@ -162,6 +162,16 @@ class component : public component_base_ {
 
   virtual out_set action(in_set&) = 0;
 
+  inline void activate(void) {
+    CkAssertMsg(!this->active, "component already online");
+    this->activated = this->active = true;
+    incoming_iterator search;
+    while (this->active &&
+           (search = this->find_ready_()) != std::end(this->incoming_)) {
+      this->stage_action(search);
+    }
+  }
+
  protected:
   inline static bool is_ready(const in_set& set) {
     return is_ready_<n_inputs_ - 1>(set);
@@ -192,7 +202,7 @@ class component : public component_base_ {
     if (val) {
       in_set set(std::move(val));
       if (!self->stage_action(set)) {
-        buffer_ready_set_(std::move(set));
+        self->buffer_ready_set_(std::move(set));
       }
     } else {
       self->on_invalidation_<I>();
@@ -204,16 +214,6 @@ class component : public component_base_ {
   direct_stage(component<Inputs, Outputs>* self,
                typed_value_ptr<in_elt_t<I>>&& val) {
     CkAbort("-- unreachable --");
-  }
-
-  inline void activate(void) {
-    CkAssertMsg(!this->active, "component already online");
-    this->activated = this->active = true;
-    incoming_iterator search;
-    while (this->active &&
-           (search = this->find_ready_()) != std::end(this->incoming)) {
-      this->stage_action(search);
-    }
   }
 
   inline void stage_action(const incoming_iterator& search) {
