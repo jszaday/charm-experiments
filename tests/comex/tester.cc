@@ -9,10 +9,10 @@ struct default_data_;
 
 template <>
 struct default_data_<double> {
-  static const double value = 0.2345678;
+  static const double value;
 };
 
-const double default_data_<double>::value;
+const double default_data_<double>::value = 0.2345678;
 
 template <>
 struct default_data_<int> {
@@ -52,7 +52,7 @@ struct consumer : public component<double, std::tuple<>> {
   }
 
   virtual out_set action(in_set& set) override {
-    CkPrintf("com%d> recvd value set %.15lg!\n", this->id,
+    CkPrintf("com%lu> recvd value set %.15lg!\n", this->id,
              **(std::get<0>(set)));
     return {};
   }

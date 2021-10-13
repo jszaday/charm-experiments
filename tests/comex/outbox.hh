@@ -112,7 +112,7 @@ struct outbox_<std::tuple<Ts...>> {
 
  public:
   template <std::size_t I>
-  inline void try_flush(std::nullptr_t) {
+  inline void try_flush(void) {
     auto& buf = std::get<I>(this->buffer_);
     auto& con = std::get<I>(this->connectors_);
     while (!buf.empty()) {

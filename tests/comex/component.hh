@@ -150,13 +150,13 @@ class component : public component_base_ {
   template <std::size_t I>
   static void accept(component_base_* base, CkMessage* msg) {
     auto* self = static_cast<component<Inputs, Outputs>*>(base);
-    self->accept<I>(self, msg2typed<in_elt_t<I>>(msg));
+    accept<I>(self, msg2typed<in_elt_t<I>>(msg));
   }
 
   template <std::size_t I>
   static void accept(component_base_* base, value_ptr&& val) {
     auto* self = static_cast<component<Inputs, Outputs>*>(base);
-    self->accept<I>(self, cast_value<in_elt_t<I>>(std::move(val)));
+    accept<I>(self, cast_value<in_elt_t<I>>(std::move(val)));
   }
 
   template <std::size_t O, std::size_t I, typename Input_, typename Output_>
@@ -165,11 +165,11 @@ class component : public component_base_ {
         std::is_same<out_elt_t<O>,
                      typename component<Input_, Output_>::in_elt_t<I>>::value,
         "component types must be compatible");
-    bool prev = (this->outgoing_).connect_to<O>(peer.id, I);
+    bool prev = (this->outgoing_).template connect_to<O>(peer.id, I);
     CkAssertMsg(!(this->active && prev),
                 "component must be offline to change outbound connections");
     if (this->active) {
-      (this->outgoing_).try_flush<O>(nullptr);
+      (this->outgoing_).template try_flush<O>();
     }
   }
 
