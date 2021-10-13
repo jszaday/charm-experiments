@@ -9,7 +9,7 @@ struct default_data_;
 
 template <>
 struct default_data_<double> {
-  static const double value = 0.12345678;
+  static const double value = 0.2345678;
 };
 
 const double default_data_<double>::value;
@@ -22,39 +22,39 @@ struct default_data_<int> {
 const int default_data_<int>::value;
 
 template <typename... Ts>
-struct test_component : public component<std::tuple<Ts...>, std::tuple<>> {
-  using parent_t = component<std::tuple<Ts...>, std::tuple<>>;
+struct adder : public component<std::tuple<Ts...>, double> {
+  using parent_t = component<std::tuple<Ts...>, double>;
   using in_set = typename parent_t::in_set;
   using out_set = typename parent_t::out_set;
 
   static_assert(sizeof...(Ts) == 2, "expected exactly two values");
 
-  test_component(std::size_t id_) : parent_t(id_) {
+  adder(std::size_t id_) : parent_t(id_) {
     this->persistent = true;
     this->activate();
   }
 
   virtual out_set action(in_set& set) override {
-    std::stringstream ss;
-    ss << "{" << **(std::get<0>(set)) << "," << **(std::get<1>(set)) << "}";
-    CkPrintf("com%d> recvd value set %s!\n", this->id, ss.str().c_str());
-    return {};
+    return {
+        make_typed_value<double>(**(std::get<0>(set)) + **(std::get<1>(set)))};
   }
 };
 
 template <typename T>
-struct producer : public component<void, T> {
-  using parent_t = component<void, T>;
+struct consumer : public component<double, std::tuple<>> {
+  using parent_t = component<double, std::tuple<>>;
   using in_set = typename parent_t::in_set;
   using out_set = typename parent_t::out_set;
 
-  producer(std::size_t id_) : parent_t(id_) {
+  consumer(std::size_t id_) : parent_t(id_) {
     this->persistent = true;
     this->activate();
   }
 
   virtual out_set action(in_set& set) override {
-    return {make_typed_value<T>(default_data_<T>::value)};
+    CkPrintf("com%d> recvd value set %.15lg!\n", this->id,
+             **(std::get<0>(set)));
+    return {};
   }
 };
 
@@ -62,16 +62,12 @@ class test_main : public CBase_test_main {
  public:
   // checks whether the "accepts" function is working as expected
   void check_accepts(void) {
-    using consumer_t = test_component<int, double>;
-    auto* com = new consumer_t(0x1);
+    using adder_t = adder<int, double>;
+    auto* com = new adder_t(0x1);
     CkEnforce(com->accepts(0, typeid(int)));
     CkEnforce(com->accepts(1, typeid(double)));
     CkEnforce(!com->accepts(1, typeid(int)));
     CkEnforce(!com->accepts(2, typeid(int)));
-
-    auto* prod = new producer<int>(0x0);
-    prod->output_to<0, 0>(*com);
-
     delete com;
   }
 
@@ -84,7 +80,7 @@ class test_main : public CBase_test_main {
   }
 };
 
-class exchanger : public CBase_exchanger {
+class exchanger : public CBase_exchanger, public locality_ {
   // this maps a component's id to its implementation
   std::map<std::size_t, std::unique_ptr<component_base_>> components_;
 
@@ -93,20 +89,31 @@ class exchanger : public CBase_exchanger {
 
  public:
   exchanger(void) {
+    locality_::set_context(this);
+
     auto& mine = this->thisIndex;
     CkEnforce(mine <= std::numeric_limits<std::uint8_t>::max());
 
+    auto* com1 = new consumer<double>(mine + 1);
+    this->components_.emplace(mine + 1, com1);
+
     // depending on whether we're even or odd -- xchg the port types
     if ((mine % 2) == 0) {
-      this->components_.emplace(mine, new test_component<int, double>(mine));
+      auto* com0 = new adder<int, double>(mine);
+      this->components_.emplace(mine, com0);
+      com0->output_to<0, 0>(*com1);
     } else {
-      this->components_.emplace(mine, new test_component<double, int>(mine));
+      auto* com0 = new adder<double, int>(mine);
+      this->components_.emplace(mine, com0);
+      com0->output_to<0, 0>(*com1);
     }
 
     this->do_sends();
   }
 
   void do_sends(void) {
+    locality_::set_context(this);
+
     auto& mine = this->thisIndex;
     auto even = (mine + (2 - (mine % 2))) % kNumElts;
     auto odd = (mine + (mine % 2) + 1) % kNumElts;
@@ -131,12 +138,18 @@ class exchanger : public CBase_exchanger {
     }
   }
 
+  virtual void accept(std::size_t com, std::size_t port,
+                      value_ptr&& ptr) override {
+    this->components_[com]->accept(port, std::move(ptr));
+  }
+
   void accept(CkDataMsg* msg) {
     auto refnum = CkGetRefNum(msg);
     // determine the destination com/port pair
     auto* port = (std::uint8_t*)&refnum;
     auto* com = port + 1;
     // and route the message accordingly
+    locality_::set_context(this);
     this->components_[*com]->accept(*port, msg);
   }
 };

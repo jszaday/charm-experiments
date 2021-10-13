@@ -8,6 +8,7 @@ struct no_init {};
 }  // namespace tags
 
 struct value {
+  virtual ~value() {}
   virtual const std::type_index* get_type(void) const { return nullptr; }
 };
 
@@ -68,6 +69,11 @@ typed_value_ptr<T> make_typed_value(Ts... ts) {
 template <typename T>
 typed_value_ptr<T> cast_value(value_ptr&& val) {
   return typed_value_ptr<T>(static_cast<typed_value<T>*>(val.release()));
+}
+
+template <typename T>
+value_ptr cast_value(typed_value_ptr<T>&& val) {
+  return value_ptr(static_cast<value*>(val.release()));
 }
 
 #endif

@@ -4,7 +4,7 @@
 
 #include <deque>
 
-#include "values.hh"
+#include "locality.hh"
 
 template <typename T>
 struct connector_ {
@@ -32,7 +32,18 @@ struct connector_ {
 
   inline bool ready(void) const { return this->which_ != kInvalid; }
 
-  void relay(T&&) {}
+  void relay(T&& value) {
+    switch (this->which_) {
+      case kWire:
+        locality_::context()->accept((this->state_).wire_.com,
+                                     (this->state_).wire_.port,
+                                     cast_value(std::move(value)));
+        break;
+      case kInvalid:
+        CkAbort("delivery to invalid connector!");
+        break;
+    }
+  }
 };
 
 template <typename T>
