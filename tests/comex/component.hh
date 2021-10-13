@@ -174,7 +174,7 @@ class component : public component_base_ {
   }
 
   inline bool collectible(void) const {
-    return this->activated && !this->active && this->outbox_.empty();
+    return this->activated && !this->active && this->outgoing_.empty();
   }
 
   virtual out_set action(in_set&) = 0;
