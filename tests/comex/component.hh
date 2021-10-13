@@ -206,6 +206,16 @@ class component : public component_base_ {
     CkAbort("-- unreachable --");
   }
 
+  inline void activate(void) {
+    CkAssertMsg(!this->active, "component already online");
+    this->activated = this->active = true;
+    incoming_iterator search;
+    while (this->active &&
+           (search = this->find_ready_()) != std::end(this->incoming)) {
+      this->stage_action(search);
+    }
+  }
+
   inline void stage_action(const incoming_iterator& search) {
     if (this->stage_action(*search)) {
       this->incoming_.erase(search);
@@ -226,6 +236,18 @@ class component : public component_base_ {
     } else {
       return false;
     }
+  }
+
+  inline incoming_iterator find_ready_(void) {
+    if (!this->incoming_.empty()) {
+      for (auto it = std::begin(this->incoming_);
+           it != std::end(this->incoming_); it++) {
+        if (is_ready(*it)) {
+          return it;
+        }
+      }
+    }
+    return std::end(this->incoming_);
   }
 
   template <std::size_t I>
