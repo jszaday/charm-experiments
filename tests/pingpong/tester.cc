@@ -18,6 +18,8 @@ ipc::block *alloc_from(int pe, std::size_t sz) {
     auto spins = 0;
     while (!(block = pool->ralloc(sz)) && (++spins < kMaxSpin))
       ;
+  } else {
+    block->used.store(true);
   }
 
   return block;
