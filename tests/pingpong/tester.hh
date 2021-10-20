@@ -19,11 +19,24 @@ CpvDeclare(int, start_plain_handler);
 CpvDeclare(int, start_xpmem_handler);
 
 struct state_ {
+  using data_type = std::uint8_t;
+  static constexpr auto max = std::numeric_limits<data_type>::max();
+
+  const std::size_t size;
   double startTime;
-  std::size_t size;
+  data_type *data;
   bool warmup;
   int nIters;
   int it;
+
+  state_(std::size_t size_) : size(size_) {
+    this->data = (data_type *)aligned_alloc(alignof(data_type), this->size);
+    for (std::size_t i = 0; i < (this->size / sizeof(data_type)); i++) {
+      this->data[i] = (data_type)(i % max);
+    }
+  }
+
+  ~state_() { free(this->data); }
 };
 
 using state_ptr_ = std::unique_ptr<state_>;
@@ -62,6 +75,7 @@ constexpr auto kNumMsgs = 16;
 
 std::map<int, ipc::mempool *> pools_;
 std::map<int, ipc::queue *> queues_;
+std::map<int, ipc::block *> retained_;
 
 ipc::mempool *pool_for(const int &pe) {
   auto search = pools_.find(pe);

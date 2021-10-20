@@ -1,5 +1,34 @@
 #include "tester.hh"
 
+constexpr auto kMaxSpin = 16;
+
+ipc::block *alloc_from(int pe, std::size_t sz) {
+  ipc::block *block = retained_[pe];
+
+  while (block != nullptr) {
+    if (block->size >= sz && !(block->used.load())) {
+      break;
+    } else {
+      block = block->next;
+    }
+  }
+
+  if (block == nullptr) {
+    auto *pool = pool_for(pe);
+    auto spins = 0;
+    while (!(block = pool->ralloc(sz)) && (++spins < kMaxSpin))
+      ;
+  }
+
+  return block;
+}
+
+inline void cache_block(int pe, ipc::block *block) {
+  auto *prev = retained_[pe];
+  retained_[pe] = block;
+  block->next = prev;
+}
+
 void start_plain(void *msg) {
   if (msg) CmiFree(msg);
 
@@ -49,7 +78,10 @@ void recv_plain(void *msg) {
   if ((mine == 0) && recv_common(state, mine, "plain")) {
     CmiFree(msg);
   } else {
-    CmiSyncSendAndFree(peer, state->size, (char *)msg);
+    // copy some dummy data into the buffer
+    memcpy((char *)msg + sizeof(empty_msg_), state->data, state->size);
+    // then send it back to our peer
+    CmiSyncSendAndFree(peer, state->size + sizeof(empty_msg_), (char *)msg);
   }
 }
 
@@ -57,9 +89,8 @@ bool recv_xpmem(state_ *state, ipc::mempool *my_pool, ipc::block *my_block) {
   auto mine = CmiMyNode();
   auto peer = (mine + 1) % CmiNumNodes();
 
-  // put the block back so we can re-use it
-  while (!my_pool->lput(my_block))
-    ;
+  // "free" the block so the other pe can re-use it
+  my_block->used.exchange(false);
 
   bool done;
   if ((done = recv_common(state, mine, "xpmem")) && (mine == 0)) {
@@ -72,18 +103,22 @@ bool recv_xpmem(state_ *state, ipc::mempool *my_pool, ipc::block *my_block) {
 }
 
 void send_xpmem(state_ *state, const int &peer) {
-  auto their_pool = pool_for(peer);
-  auto their_queue = queue_for(peer);
-
-  // get a remote allocation from the other pe
   ipc::block *their_block;
-  while (!(their_block = their_pool->ralloc(state->size)))
+  auto their_queue = queue_for(peer);
+  // spin until we get a remote block
+  while (!(their_block = alloc_from(peer, state->size)))
     ;
-
+  // locally cache an xlat'd ptr before send
+  cache_block(peer, their_block);
+  // get a ptr to the data in the block
+  if (!their_block->xlatd) {
+    their_block->xlatd =
+        translate_address(peer, their_block->ptr, their_block->size);
+  }
+  // copy our data into the block
+  memcpy(their_block->xlatd, state->data, state->size);
   // and put it into their ipc queue
-  auto *xlatd =
-      (ipc::block *)translate_address(peer, their_block, sizeof(ipc::block));
-  while (!their_queue->enqueue(their_block, xlatd))
+  while (!their_queue->enqueue(their_block->orig, their_block))
     ;
 }
 
@@ -143,10 +178,10 @@ void test_start(int argc, char **argv) {
   // read the command line arguments
   argc = CmiGetArgc(argv);
   auto mine = CmiMyPe();
-  auto *state = new state_();
+  auto size = (argc >= 3) ? atoi(argv[2]) : 4096;
+  auto *state = new state_(size);
   state->warmup = true;
   state->nIters = (argc >= 2) ? atoi(argv[1]) : 128;
-  state->size = (argc >= 3) ? atoi(argv[2]) : 4096;
   if (mine == 0) {
     CmiPrintf("main> pingpong with %d iterations and %luB payload\n",
               state->nIters, state->size);
@@ -204,10 +239,13 @@ void send_signal(const int &pe, const int &which) {
 
 inline void start_plain_(state_ *state) {
   auto next = (CmiMyPe() + 1) % CmiNumPes();
-  auto msg = (char *)CmiAlloc(state->size);
+  auto msg = (char *)CmiAlloc(state->size + sizeof(empty_msg_));
   reset_state_(state);
   CmiSetHandler(msg, CpvAccess(recv_plain_handler));
-  CmiSyncSend(next, state->size, msg);
+  // copy some data into the buffer
+  memcpy(msg + sizeof(empty_msg_), state->data, state->size);
+  // then send it to our peer
+  CmiSyncSend(next, state->size + sizeof(empty_msg_), msg);
 }
 
 inline void populate_buffers_(const int &mine, const state_ *state) {

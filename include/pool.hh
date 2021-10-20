@@ -41,7 +41,7 @@ struct mempool {
     return this->lput(new block(nullptr, ptr, sz));
   }
 
-  bool lput(block* blk) {
+  bool lput(block *blk) {
     auto pt = which_pow2(blk->size);
     if (pt >= kNumCutOffPoints || blk->size != kCutOffPoints[pt]) {
       return false;
@@ -69,11 +69,13 @@ struct mempool {
       assert(swap == nullptr);
       return nullptr;
     } else {
-      auto *xlatd = translate_address(this->pe, head, kCutOffPoints[pt]);
-      auto *next = ((block *)xlatd)->next;
+      auto *xlatd =
+          (block *)translate_address(this->pe, head, kCutOffPoints[pt]);
+      auto *next = xlatd->next;
       auto *swap = this->blocks[pt].exchange(next, std::memory_order_release);
-      assert(swap == nullptr);
-      return head;
+      auto used = xlatd->used.exchange(true);
+      assert(!used && !swap);
+      return xlatd;
     }
   }
 };

@@ -76,14 +76,12 @@ void handle_run(void *msg) {
     if (sz > maxSize) sz = maxSize;
     assert((sz % intSz) == 0);
 
-    auto *block = their_pool->ralloc(sz);
+    auto *xlatd = their_pool->ralloc(sz);
     CmiPrintf("%d> requesting block of size %d bytes... %s\n", mine, sz,
-              block ? "pass" : "fail");
+              xlatd ? "pass" : "fail");
 
-    if (block != nullptr) {
+    if (xlatd != nullptr) {
       // fill the block with test data
-      auto *xlatd =
-          (ipc::block *)translate_address(theirs, block, sizeof(ipc::block));
       xlatd->size = sz;
       auto *ptr = (char *)translate_address(theirs, xlatd->ptr, sz);
       auto &last = *((int *)ptr);
@@ -91,7 +89,7 @@ void handle_run(void *msg) {
       auto *data = (int *)(ptr + sizeof(int));
       std::fill(data, data + (sz / intSz), (int)sz);
       // and send it back to the host pe for verification/free
-      while (!their_queue->enqueue(block, xlatd))
+      while (!their_queue->enqueue(xlatd->orig, xlatd))
         ;
     }
   }
