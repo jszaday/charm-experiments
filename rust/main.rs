@@ -3,12 +3,22 @@ use std::os::raw::{c_char, c_void};
 mod cmi;
 
 struct TestMessage {
-    core: [u8; 64],
+    _core: [u8; cmi::HEADER_SIZE],
 }
 
-extern "C" fn exit(msg: *mut c_void) {}
+// TODO ( wrap this with user-defined type )
+// TODO ( exploit RUST's ARC to avoid explicit free )
+extern "C" fn exit(msg: *mut c_void) {
+    let mine = cmi::this_pe();
+    cmi::println(format!("{}> shuttting down!", mine));
+    cmi::free_message(msg);
+    unsafe {
+        cmi::exit_scheduler();
+    }
+}
 
-extern "C" fn start(argc: i32, argv: *const *const c_char) {
+// TODO ( wrap this with Rust usable args (Vec<String>) )
+extern "C" fn start(_argc: i32, _argv: *const *const c_char) {
     unsafe {
         let mine = cmi::this_pe();
         let exit_handler = cmi::register_handler(exit);
@@ -17,6 +27,8 @@ extern "C" fn start(argc: i32, argv: *const *const c_char) {
 
         if mine == 0 {
             let msg = cmi::allocate_message::<TestMessage>();
+            cmi::set_handler(msg, exit_handler);
+            cmi::sync::broadcast_all_and_free(msg);
         }
     }
 }

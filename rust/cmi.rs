@@ -20,8 +20,20 @@ extern "C" {
 
     fn CmiAlloc(size: i32) -> *mut c_void;
 
+    fn CmiSetHandler_(msg: *mut c_void, handler: i32);
+
+    fn CmiSyncBroadcastAllAndFree_(size: i32, msg: *mut c_void);
+
     fn CmiPrintf(format: *const c_char, ...);
+
+    fn CmiFree(msg: *mut c_void);
+
+    #[link_name = "CsdExitScheduler_"]
+    pub fn exit_scheduler();
 }
+
+// TODO ( use rust-bindgen instead )
+pub const HEADER_SIZE: usize = 48;
 
 pub unsafe fn initialize<I>(args: I, start: StartFn, usched: i32, initret: i32)
 where
@@ -36,15 +48,37 @@ where
         })
         .collect();
     let argc: i32 = argv.len() as i32;
-    ConverseInit(argc, argv.as_ptr(), start, 0, 0);
+    ConverseInit(argc, argv.as_ptr(), start, usched, initret);
     std::mem::forget(argv);
 }
 
-pub fn set_handler<M>(msg: *mut M) {}
+pub fn set_handler<M>(msg: *mut M, handler: i32) {
+    unsafe {
+        CmiSetHandler_(msg as *mut c_void, handler);
+    }
+}
 
 pub unsafe fn allocate_message<M>() -> *mut M {
     let sz = std::mem::size_of::<M>();
     return CmiAlloc(sz as i32) as *mut M;
+}
+
+pub fn free_message<M>(msg: *mut M) {
+    unsafe {
+        CmiFree(msg as *mut c_void);
+    }
+}
+
+pub mod sync {
+    pub fn broadcast_all_and_free<M>(msg: *mut M) {
+        use cmi::CmiSyncBroadcastAllAndFree_;
+        use c_void;
+
+        unsafe {
+            let sz = std::mem::size_of::<M>();
+            CmiSyncBroadcastAllAndFree_(sz as i32, msg as *mut c_void);
+        }
+    }
 }
 
 pub fn this_pe() -> i32 {
