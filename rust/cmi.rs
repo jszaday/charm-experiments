@@ -71,8 +71,8 @@ pub fn free_message<M>(msg: *mut M) {
 
 pub mod sync {
     pub fn broadcast_all_and_free<M>(msg: *mut M) {
-        use cmi::CmiSyncBroadcastAllAndFree_;
         use c_void;
+        use cmi::CmiSyncBroadcastAllAndFree_;
 
         unsafe {
             let sz = std::mem::size_of::<M>();
