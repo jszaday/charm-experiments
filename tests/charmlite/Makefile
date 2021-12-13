@@ -1,5 +1,5 @@
 
-CXX=clang++
+CXX=$(CHARM_HOME)/bin/charmc -language converse++
 
 OPTS?=-g3
 OPTS:=$(OPTS) -std=c++11

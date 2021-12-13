@@ -9,7 +9,7 @@ struct test_message : public cmk::message {
   test_message(int _) : val(_) {}
 };
 
-struct foo {
+struct foo : public cmk::chare<int> {
   int val;
 
   foo(test_message* msg) : val(msg->val) { delete msg; }
@@ -22,11 +22,12 @@ struct foo {
 };
 
 int main(void) {
-  assert(!cmk::entry_table_.empty());
-  auto* m1 = new test_message(20);
-  auto p = cmk::proxy<foo>::construct<test_message>(m1);
-  auto* m2 = new test_message(22);
-  p.send<test_message, &foo::bar>(m2);
+  auto arr = cmk::collective_proxy<foo>::construct();
+  auto elt = arr[0];
+  // we can send messages to elements that don't exist yet
+  elt.send<test_message, &foo::bar>(new test_message(22));
+  // so this will still work...
+  elt.insert(new test_message(20));
   return 0;
 }
 
