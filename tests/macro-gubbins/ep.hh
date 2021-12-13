@@ -4,14 +4,15 @@
 #include "traits.hh"
 
 namespace cmk {
+
 using entry_fn_t = void (*)(void *, void *);
 using entry_table_t = std::vector<entry_fn_t>;
 using entry_id_t = typename entry_table_t::size_type;
 
-entry_id_t nil_entry_ = 0;
-std::vector<entry_fn_t> entry_table_;
+extern std::vector<entry_fn_t> entry_table_;
+constexpr entry_id_t nil_entry_ = 0;
 
-void invoke(void *self, entry_id_t id, void *msg) {
+inline void invoke(void *self, entry_id_t id, void *msg) {
   if (id == 0) {
     // ABORT;
   } else {
@@ -19,19 +20,28 @@ void invoke(void *self, entry_id_t id, void *msg) {
   }
 }
 
-template <typename T, typename Message, member_fn_t<T, Message> Fn>
-typename std::enable_if<is_message_<Message>()>::type call_(void *self,
-                                                            void *msg) {
-  message_ptr<Message> owned(static_cast<Message *>(msg));
-  (static_cast<T *>(self)->*Fn)(std::move(owned));
-}
+template<entry_fn_t Fn>
+struct entry_id_helper_ {
+  static entry_id_t id_;
+};
 
-template <typename T, typename Message, member_fn_t<T, Message> Fn>
-entry_id_t register_(void) {
-  auto id = entry_table_.size() + 1;
-  entry_table_.emplace_back(&(call_<T, Message, Fn>));
-  return id;
-}
+template<typename T, T t, typename Enable = void>
+struct entry_record_;
+
+template<typename T, typename Message, member_fn_t<T, Message> Fn>
+struct entry_record_<
+  member_fn_t<T, Message>, Fn,
+  typename std::enable_if<is_message_<Message>()>::type> {
+
+  static void call_(void* self, void* msg) {
+    message_ptr<Message> owned(static_cast<Message *>(msg));
+    (static_cast<T *>(self)->*Fn)(std::move(owned));
+  }
+
+  static const entry_id_t& id_(void) {
+    return entry_id_helper_<(&call_)>::id_;
+  }
+};
 
 template <typename A, typename B>
 struct constructor_caller_;
@@ -53,16 +63,19 @@ struct constructor_caller_<A, cmk::message_ptr<Message> &&> {
   }
 };
 
-template <typename A, typename B>
+template <typename T, typename Message>
 void call_constructor_(void *self, void *msg) {
-  constructor_caller_<A, B>()(self, msg);
+  constructor_caller_<T, Message>()(self, msg);
 }
 
-template <typename A, typename B>
-entry_id_t register_constructor_(void) {
-  auto id = entry_table_.size() + 1;
-  entry_table_.emplace_back(&(call_constructor_<A, B>));
-  return id;
+template<typename T, T t>
+entry_id_t entry(void) {
+  return entry_record_<T, t>::id_();
+}
+
+template<typename T, typename Message>
+entry_id_t constructor(void) {
+  return entry_id_helper_<(&call_constructor_<T, Message>)>::id_;
 }
 }  // namespace cmk
 

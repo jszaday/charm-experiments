@@ -13,7 +13,7 @@ struct message_record_ {
 
 using message_table_t = std::vector<message_record_>;
 using message_id_t = typename message_table_t::size_type;
-message_table_t message_table_;
+extern message_table_t message_table_;
 
 constexpr std::size_t header_size = 48;
 
