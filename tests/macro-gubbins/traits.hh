@@ -27,6 +27,20 @@ struct message_of<member_fn_t<T, Message>> {
 
 template <typename T>
 using message_of_t = typename message_of<T>::type;
+
+template <typename T>
+struct viable_argument {
+  using type = message_ptr<T> &&;
+};
+
+template <>
+struct viable_argument<void> {
+  using type = void;
+};
+
+template <typename T>
+using viable_argument_t = typename viable_argument<T>::type;
+
 }  // namespace cmk
 
 #endif

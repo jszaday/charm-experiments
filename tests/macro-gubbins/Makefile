@@ -3,6 +3,7 @@ CXX=clang++
 
 OPTS?=-g3
 OPTS:=$(OPTS) -std=c++11
+FORMAT_OPTS?=-i --style Google
 
 all: pgm
 
@@ -18,5 +19,8 @@ pgm: pgm.o ep.o
 test: pgm
 	./pgm
  
+format:
+	clang-format $(FORMAT_OPTS) *.cc *.hh
+
 clean:
 	rm -f pgm *.o

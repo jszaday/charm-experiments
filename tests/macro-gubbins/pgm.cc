@@ -1,5 +1,5 @@
-#include <iostream>
 #include <cassert>
+#include <iostream>
 
 #include "cmk.hh"
 
@@ -22,13 +22,11 @@ struct foo {
 
 int main(void) {
   assert(!cmk::entry_table_.empty());
-  auto* obj = ::operator new(sizeof(foo));
+  using message_t = cmk::message_ptr<test_message>;
   auto* m1 = new test_message(20);
-  auto cons = cmk::constructor<foo, cmk::message_ptr<test_message>&&>();
-  cmk::invoke(obj, cons, m1);
+  auto p = cmk::proxy<foo>::construct<test_message>(message_t(m1));
   auto* m2 = new test_message(22);
-  auto ep = cmk::entry<decltype(&foo::bar), &foo::bar>();
-  cmk::invoke(obj, ep, m2);
+  p.invoke<test_message, (&foo::bar)>(message_t(m2));
   return 0;
 }
 

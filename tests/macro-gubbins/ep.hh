@@ -9,38 +9,39 @@ using entry_fn_t = void (*)(void *, void *);
 using entry_table_t = std::vector<entry_fn_t>;
 using entry_id_t = typename entry_table_t::size_type;
 
-extern std::vector<entry_fn_t> entry_table_;
 constexpr entry_id_t nil_entry_ = 0;
+extern std::vector<entry_fn_t> entry_table_;
 
 inline void invoke(void *self, entry_id_t id, void *msg) {
-  if (id == 0) {
+  if (id == nil_entry_) {
     // ABORT;
   } else {
     (entry_table_[id - 1])(self, msg);
   }
 }
 
-template<entry_fn_t Fn>
+template <typename Message>
+inline void invoke(void *self, entry_id_t id, message_ptr<Message> &&msg) {
+  invoke(self, id, msg.release());
+}
+
+template <entry_fn_t Fn>
 struct entry_id_helper_ {
   static entry_id_t id_;
 };
 
-template<typename T, T t, typename Enable = void>
+template <typename T, T t, typename Enable = void>
 struct entry_record_;
 
-template<typename T, typename Message, member_fn_t<T, Message> Fn>
-struct entry_record_<
-  member_fn_t<T, Message>, Fn,
-  typename std::enable_if<is_message_<Message>()>::type> {
-
-  static void call_(void* self, void* msg) {
+template <typename T, typename Message, member_fn_t<T, Message> Fn>
+struct entry_record_<member_fn_t<T, Message>, Fn,
+                     typename std::enable_if<is_message_<Message>()>::type> {
+  static void call_(void *self, void *msg) {
     message_ptr<Message> owned(static_cast<Message *>(msg));
     (static_cast<T *>(self)->*Fn)(std::move(owned));
   }
 
-  static const entry_id_t& id_(void) {
-    return entry_id_helper_<(&call_)>::id_;
-  }
+  static const entry_id_t &id_(void) { return entry_id_helper_<(&call_)>::id_; }
 };
 
 template <typename A, typename B>
@@ -68,12 +69,12 @@ void call_constructor_(void *self, void *msg) {
   constructor_caller_<T, Message>()(self, msg);
 }
 
-template<typename T, T t>
+template <typename T, T t>
 entry_id_t entry(void) {
   return entry_record_<T, t>::id_();
 }
 
-template<typename T, typename Message>
+template <typename T, typename Message>
 entry_id_t constructor(void) {
   return entry_id_helper_<(&call_constructor_<T, Message>)>::id_;
 }
