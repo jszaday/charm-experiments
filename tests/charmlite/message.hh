@@ -9,7 +9,9 @@ namespace cmk {
 using message_deleter_t = void (*)(void *);
 
 struct message_record_ {
-  message_deleter_t deleter;
+  message_deleter_t deleter_;
+
+  message_record_(const message_deleter_t &deleter) : deleter_(deleter) {}
 };
 
 using message_table_t = std::vector<message_record_>;
@@ -18,6 +20,11 @@ extern message_table_t message_table_;
 
 constexpr std::size_t header_size = CmiMsgHeaderSizeBytes;
 
+template <typename T>
+struct message_helper_ {
+  static message_id_t id_;
+};
+
 struct message {
   char core_[header_size];
   std::bitset<8> flags_;
@@ -25,8 +32,19 @@ struct message {
   collective_index_t id_;
   chare_index_t idx_;
   entry_id_t ep_;
+  std::size_t total_size_;
 
   static constexpr auto has_collective_kind = 0;
+
+  message(void) : total_size_(header_size) {
+    CmiSetHandler(this, CpvAccess(deliver_handler_));
+  }
+
+  message(message_id_t kind, std::size_t total_size)
+      : kind_(kind), total_size_(total_size) {
+    // ( DRY failure )
+    CmiSetHandler(this, CpvAccess(deliver_handler_));
+  }
 
   collective_kind_t *kind(void) {
     if (this->flags_[has_collective_kind]) {
@@ -47,12 +65,21 @@ struct message {
     } else {
       auto &kind = static_cast<message *>(msg)->kind_;
       if (kind == 0) {
-        // ABORT;
+        message::operator delete(msg);
       } else {
-        message_table_[kind - 1].deleter(msg);
+        message_table_[kind - 1].deleter_(msg);
       }
     }
   }
+
+  void *operator new[](std::size_t sz) { return CmiAlloc(sz); }
+
+  void operator delete(void *blk) { CmiFree(blk); }
+};
+
+template <typename T>
+struct plain_message : public message {
+  plain_message(void) : message(message_helper_<T>::id_, sizeof(T)) {}
 };
 }  // namespace cmk
 

@@ -28,8 +28,24 @@ const chare_record_& record_for(void) {
   return chare_table_[id - 1];
 }
 
+template <typename T, typename Enable = void>
+struct property_setter_ {
+  void operator()(T*, const chare_index_t&) {}
+};
+
+template <typename Index>
+struct chare;
+
 struct chare_base_ {
+ private:
   chare_index_t index_;
+
+ public:
+  template <typename T, typename Enable>
+  friend class property_setter_;
+
+  template <typename Index>
+  friend class chare;
 };
 
 template <typename T, typename Enable = void>
@@ -47,6 +63,12 @@ struct chare : public chare_base_ {
   const Index& index(void) {
     return index_view<Index>::reinterpret(this->index_);
   }
+};
+
+template <typename T>
+struct property_setter_<
+    T, typename std::enable_if<std::is_base_of<chare_base_, T>::value>::type> {
+  void operator()(T* t, const chare_index_t& idx) { t->index_ = idx; }
 };
 
 template <typename Index>

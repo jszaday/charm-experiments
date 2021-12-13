@@ -81,12 +81,16 @@ using collective_kind_t = typename collective_kinds_t::size_type;
 constexpr entry_id_t nil_entry_ = 0;
 constexpr collective_kind_t nil_kind_ = 0;
 
+// TODO ( make these cpv variables! )
 extern entry_table_t entry_table_;
 extern chare_table_t chare_table_;
 extern collective_kinds_t collective_kinds_;
 extern collective_table_t collective_table_;
 extern collective_buffer_t collective_buffer_;
 extern std::uint32_t local_collective_count_;
+
+CpvExtern(int, deliver_handler_);
+void deliver(void*);
 }  // namespace cmk
 
 #endif

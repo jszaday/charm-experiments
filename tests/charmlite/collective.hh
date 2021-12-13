@@ -50,17 +50,23 @@ struct collective : public collective_base_ {
   bool try_deliver(message* msg) {
     auto* ep = record_for(msg->ep_);
     auto& idx = msg->idx_;
-
-    if (ep->is_constructor_) {
-      auto* ch = (record_for<T>()).allocate();
-      auto ins = chares_.emplace(idx, static_cast<T*>(ch));
-      CmiAssertMsg(ins.second, "insertion did not occur!");
+    auto pe = mapper_.pe_for(idx);
+    // TODO ( temporary constraint, elements only created on home pe )
+    if (ep->is_constructor_ && (pe == CmiMyPe())) {
+      auto* ch = static_cast<T*>((record_for<T>()).allocate());
+      // set properties of the newly created chare
+      property_setter_<T>()(ch, idx);
+      auto ins = chares_.emplace(idx, ch);
       (ep->fn_)(ch, msg);
       flush_buffers(idx);
     } else {
       auto find = chares_.find(idx);
       if (find == std::end(this->chares_)) {
-        return false;
+        if (pe == CmiMyPe()) {
+          return false;
+        } else {
+          CmiSyncSendAndFree(pe, msg->total_size_, (char*)msg);
+        }
       } else {
         (ep->fn_)((find->second).get(), msg);
       }
@@ -83,34 +89,6 @@ template <typename T, typename Mapper>
 struct collective_helper_<collective<T, Mapper>> {
   static collective_kind_t kind_;
 };
-
-inline void deliver(void* raw) {
-  auto* msg = static_cast<message*>(raw);
-  if (auto* kind = msg->kind()) {
-    auto& rec = collective_kinds_[*kind - 1];
-    auto* cons = rec(msg->id_);
-    auto ins = collective_table_.emplace(msg->id_, cons);
-    CmiAssertMsg(ins.second, "insertion did not occur!");
-    auto find = collective_buffer_.find(msg->id_);
-    if (find == std::end(collective_buffer_)) {
-      return;
-    } else {
-      auto& buffer = find->second;
-      while (!buffer.empty()) {
-        cons->deliver(buffer.front().release());
-        buffer.pop_front();
-      }
-    }
-  } else {
-    auto search = collective_table_.find(msg->id_);
-    if (search == std::end(collective_table_)) {
-      collective_buffer_[msg->id_].emplace_back(msg);
-    } else {
-      search->second->deliver(msg);
-    }
-  }
-}
-
 }  // namespace cmk
 
 #endif

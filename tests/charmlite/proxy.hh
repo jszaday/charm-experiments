@@ -64,8 +64,7 @@ class collective_proxy {
     auto* msg = new message();
     msg->id_ = id;
     msg->set_collective_kind(kind());
-    // CmiFreeBroadcastAllFn(sizeof(message), (char*)msg);
-    deliver(msg);
+    CmiSyncBroadcastAllAndFree(sizeof(message), (char*)msg);
     return collective_proxy<T, Mapper>(id);
   }
 };

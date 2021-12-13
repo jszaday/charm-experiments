@@ -40,6 +40,21 @@ static collective_kind_t register_collective_(void) {
 template <typename T, typename Mapper>
 collective_kind_t collective_helper_<collective<T, Mapper>>::kind_ =
     register_collective_<T, Mapper>();
+
+template <typename T>
+static void message_deleter_impl_(void* msg) {
+  delete static_cast<T*>(msg);
+}
+
+template <typename T>
+static message_id_t register_message_(void) {
+  auto id = message_table_.size() + 1;
+  message_table_.emplace_back(&message_deleter_impl_<T>);
+  return id;
+}
+
+template <typename T>
+message_id_t message_helper_<T>::id_ = register_message_<T>();
 }  // namespace cmk
 
 #endif
