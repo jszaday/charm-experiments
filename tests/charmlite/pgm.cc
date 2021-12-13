@@ -12,21 +12,21 @@ struct test_message : public cmk::message {
 struct foo {
   int val;
 
-  foo(cmk::message_ptr<test_message>&& msg) : val(msg->val) {}
+  foo(test_message* msg) : val(msg->val) { delete msg; }
 
-  void bar(cmk::message_ptr<test_message>&& msg) {
+  void bar(test_message* msg) {
     std::cout << this->val << "+" << msg->val << "=" << (val + msg->val)
               << std::endl;
+    delete msg;
   }
 };
 
 int main(void) {
   assert(!cmk::entry_table_.empty());
-  using message_t = cmk::message_ptr<test_message>;
   auto* m1 = new test_message(20);
-  auto p = cmk::proxy<foo>::construct<test_message>(message_t(m1));
+  auto p = cmk::proxy<foo>::construct<test_message>(m1);
   auto* m2 = new test_message(22);
-  p.invoke<test_message, (&foo::bar)>(message_t(m2));
+  p.send<test_message, &foo::bar>(m2);
   return 0;
 }
 

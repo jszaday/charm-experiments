@@ -10,7 +10,7 @@ using entry_table_t = std::vector<entry_fn_t>;
 using entry_id_t = typename entry_table_t::size_type;
 
 constexpr entry_id_t nil_entry_ = 0;
-extern std::vector<entry_fn_t> entry_table_;
+extern entry_table_t entry_table_;
 
 inline void invoke(void *self, entry_id_t id, void *msg) {
   if (id == nil_entry_) {
@@ -18,11 +18,6 @@ inline void invoke(void *self, entry_id_t id, void *msg) {
   } else {
     (entry_table_[id - 1])(self, msg);
   }
-}
-
-template <typename Message>
-inline void invoke(void *self, entry_id_t id, message_ptr<Message> &&msg) {
-  invoke(self, id, msg.release());
 }
 
 template <entry_fn_t Fn>
@@ -37,8 +32,7 @@ template <typename T, typename Message, member_fn_t<T, Message> Fn>
 struct entry_record_<member_fn_t<T, Message>, Fn,
                      typename std::enable_if<is_message_<Message>()>::type> {
   static void call_(void *self, void *msg) {
-    message_ptr<Message> owned(static_cast<Message *>(msg));
-    (static_cast<T *>(self)->*Fn)(std::move(owned));
+    (static_cast<T *>(self)->*Fn)(static_cast<Message *>(msg));
   }
 
   static const entry_id_t &id_(void) { return entry_id_helper_<(&call_)>::id_; }
@@ -56,11 +50,10 @@ struct constructor_caller_<A, void> {
 };
 
 template <typename A, typename Message>
-struct constructor_caller_<A, cmk::message_ptr<Message> &&> {
+struct constructor_caller_<A, Message *> {
   typename std::enable_if<is_message_<Message>()>::type operator()(void *self,
                                                                    void *msg) {
-    message_ptr<Message> owned(static_cast<Message *>(msg));
-    new (static_cast<A *>(self)) A(std::move(owned));
+    new (static_cast<A *>(self)) A(static_cast<Message *>(msg));
   }
 };
 

@@ -1,9 +1,7 @@
 #ifndef __CMK_MSG_HH__
 #define __CMK_MSG_HH__
 
-#include <cstdint>
-#include <memory>
-#include <vector>
+#include "chare.hh"
 
 namespace cmk {
 using message_deleter_t = void (*)(void *);
@@ -44,9 +42,6 @@ template <>
 struct message_deleter<void> {
   void operator()(void *t) { message::free(t); }
 };
-
-template <typename T>
-using message_ptr = std::unique_ptr<T, message_deleter<T>>;
 }  // namespace cmk
 
 #endif
