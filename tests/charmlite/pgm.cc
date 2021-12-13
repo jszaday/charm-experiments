@@ -1,7 +1,7 @@
 #include <cassert>
 #include <iostream>
 
-#include "cmk.hh"
+#include "cmk.decl.hh"
 
 struct test_message : public cmk::message {
   int val;
@@ -30,4 +30,4 @@ int main(void) {
   return 0;
 }
 
-#include "ep.def.hh"
+#include "cmk.def.hh"
