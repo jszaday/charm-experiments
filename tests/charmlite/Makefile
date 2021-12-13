@@ -11,11 +11,11 @@ all: pgm
 pgm.o: pgm.cc
 	$(CXX) $(OPTS) -c -o pgm.o pgm.cc
 
-ep.o: ep.cc
-	$(CXX) $(OPTS) -c -o ep.o ep.cc
+core.o: core.cc
+	$(CXX) $(OPTS) -c -o core.o core.cc
 
-pgm: pgm.o ep.o
-	$(CXX) $(OPTS) ep.o pgm.o -o pgm
+pgm: pgm.o core.o
+	$(CXX) $(OPTS) core.o pgm.o -o pgm
 
 test: pgm
 	./charmrun +p$(CMK_NUM_PES) ./pgm $(TESTOPTS)
