@@ -30,7 +30,7 @@ const chare_record_& record_for(void) {
 
 template <typename T, typename Enable = void>
 struct property_setter_ {
-  void operator()(T*, const chare_index_t&) {}
+  void operator()(T*, const collective_index_t&, const chare_index_t&) {}
 };
 
 template <typename Index>
@@ -38,6 +38,7 @@ struct chare;
 
 struct chare_base_ {
  private:
+  collective_index_t parent_;
   chare_index_t index_;
 
  public:
@@ -68,7 +69,10 @@ struct chare : public chare_base_ {
 template <typename T>
 struct property_setter_<
     T, typename std::enable_if<std::is_base_of<chare_base_, T>::value>::type> {
-  void operator()(T* t, const chare_index_t& idx) { t->index_ = idx; }
+  void operator()(T* t, const collective_index_t& id, const chare_index_t& idx) {
+    t->parent_ = id;
+    t->index_ = idx;
+  }
 };
 
 template <typename Index>

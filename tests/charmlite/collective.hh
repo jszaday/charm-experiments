@@ -41,6 +41,8 @@ struct collective : public collective_base_ {
           // the pop it from the queue
           buffer.pop_front();
         } else {
+          // if delivery failed, stop attempting
+          // to deliver messages
           break;
         }
       }
@@ -55,19 +57,27 @@ struct collective : public collective_base_ {
     if (ep->is_constructor_ && (pe == CmiMyPe())) {
       auto* ch = static_cast<T*>((record_for<T>()).allocate());
       // set properties of the newly created chare
-      property_setter_<T>()(ch, idx);
+      property_setter_<T>()(ch, this->id_, idx);
+      // place the chare within our element list
       auto ins = chares_.emplace(idx, ch);
+      // call constructor on chare
       (ep->fn_)(ch, msg);
+      // flush any messages we have for it
       flush_buffers(idx);
     } else {
       auto find = chares_.find(idx);
+      // if the element isn't found locally
       if (find == std::end(this->chares_)) {
+        // and it's our chare...
         if (pe == CmiMyPe()) {
+          // it hasn't been created yet, so buffer
           return false;
         } else {
+          // otherwise route to the home pe
           CmiSyncSendAndFree(pe, msg->total_size_, (char*)msg);
         }
       } else {
+        // otherwise, invoke the EP on the chare
         (ep->fn_)((find->second).get(), msg);
       }
     }
@@ -76,7 +86,9 @@ struct collective : public collective_base_ {
   }
 
   virtual void deliver(message* msg) override {
+    // if the delivery attempt fails --
     if (!try_deliver(msg)) {
+      // buffer the message
       this->buffers_[msg->idx_].emplace_back(msg);
     }
   }

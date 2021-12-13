@@ -3,6 +3,9 @@
 
 #include "ep.hh"
 
+/* registers all user data-types with the RTS
+ */
+
 namespace cmk {
 template <entry_fn_t Fn, bool Constructor>
 static entry_id_t register_entry_fn_(void) {
