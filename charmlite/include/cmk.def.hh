@@ -58,6 +58,22 @@ static message_kind_t register_message_(void) {
 
 template <typename T>
 message_kind_t message_helper_<T>::kind_ = register_message_<T>();
+
+template <typename T, T t>
+static std::size_t register_function_(std::vector<T>& table) {
+  auto id = table.size() + 1;
+  table.emplace_back(t);
+  return id;
+}
+
+template <combiner_t Fn>
+combiner_id_t combiner_helper_<Fn>::id_ =
+    register_function_<combiner_t, Fn>(combiner_table_);
+
+template <callback_t Fn>
+callback_id_t callback_helper_<Fn>::id_ =
+    register_function_<callback_t, Fn>(callback_table_);
+
 }  // namespace cmk
 
 #endif

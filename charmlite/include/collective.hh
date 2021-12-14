@@ -50,18 +50,19 @@ struct collective : public collective_base_ {
   }
 
   bool try_deliver(message* msg) {
-    auto* ep = record_for(msg->ep_);
-    auto& idx = msg->idx_;
+    auto& ep = msg->dst_.endpoint_;
+    auto* rec = record_for(ep.ep_);
+    auto& idx = ep.idx_;
     auto pe = mapper_.pe_for(idx);
     // TODO ( temporary constraint, elements only created on home pe )
-    if (ep->is_constructor_ && (pe == CmiMyPe())) {
+    if (rec->is_constructor_ && (pe == CmiMyPe())) {
       auto* ch = static_cast<T*>((record_for<T>()).allocate());
       // set properties of the newly created chare
       property_setter_<T>()(ch, this->id_, idx);
       // place the chare within our element list
       auto ins = chares_.emplace(idx, ch);
       // call constructor on chare
-      (ep->fn_)(ch, msg);
+      (rec->fn_)(ch, msg);
       // flush any messages we have for it
       flush_buffers(idx);
     } else {
@@ -78,7 +79,7 @@ struct collective : public collective_base_ {
         }
       } else {
         // otherwise, invoke the EP on the chare
-        (ep->fn_)((find->second).get(), msg);
+        (rec->fn_)((find->second).get(), msg);
       }
     }
 
@@ -89,7 +90,7 @@ struct collective : public collective_base_ {
     // if the delivery attempt fails --
     if (!try_deliver(msg)) {
       // buffer the message
-      this->buffers_[msg->idx_].emplace_back(msg);
+      this->buffers_[msg->dst_.endpoint_.idx_].emplace_back(msg);
     }
   }
 };

@@ -61,6 +61,14 @@ struct entry_record_ {
  * - id/index refers to a specific instance
  */
 
+using callback_t = void (*)(message*);
+using callback_table_t = std::vector<callback_t>;
+using callback_id_t = typename callback_table_t::size_type;
+
+using combiner_t = message* (*)(message*, message*);
+using combiner_table_t = std::vector<combiner_t>;
+using combiner_id_t = typename combiner_table_t::size_type;
+
 using entry_table_t = std::vector<entry_record_>;
 using entry_id_t = typename entry_table_t::size_type;
 
@@ -89,6 +97,8 @@ constexpr collective_kind_t nil_kind_ = 0;
 // FIXME ( make these cpv variables! )
 extern entry_table_t entry_table_;
 extern chare_table_t chare_table_;
+extern callback_table_t callback_table_;
+extern combiner_table_t combiner_table_;
 extern collective_kinds_t collective_kinds_;
 extern collective_table_t collective_table_;
 extern collective_buffer_t collective_buffer_;

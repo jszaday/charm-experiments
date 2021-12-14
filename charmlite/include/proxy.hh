@@ -18,25 +18,28 @@ class element_proxy {
 
   template <typename Message>
   void insert(Message* msg) {
-    msg->ep_ = constructor<T, Message*>();
-    msg->id_ = this->id_;
-    msg->idx_ = this->idx_;
+    msg->dst_kind_ = kEndpoint;
+    msg->dst_.endpoint_.ep_ = constructor<T, Message*>();
+    msg->dst_.endpoint_.id_ = this->id_;
+    msg->dst_.endpoint_.idx_ = this->idx_;
     deliver(msg);
   }
 
   void insert(void) {
     auto* msg = new message;
-    msg->ep_ = constructor<T, void>();
-    msg->id_ = this->id_;
-    msg->idx_ = this->idx_;
+    msg->dst_kind_ = kEndpoint;
+    msg->dst_.endpoint_.ep_ = constructor<T, void>();
+    msg->dst_.endpoint_.id_ = this->id_;
+    msg->dst_.endpoint_.idx_ = this->idx_;
     deliver(msg);
   }
 
   template <typename Message, member_fn_t<T, Message> Fn>
   void send(Message* msg) {
-    msg->ep_ = entry<member_fn_t<T, Message>, Fn>();
-    msg->id_ = this->id_;
-    msg->idx_ = this->idx_;
+    msg->dst_kind_ = kEndpoint;
+    msg->dst_.endpoint_.ep_ = entry<member_fn_t<T, Message>, Fn>();
+    msg->dst_.endpoint_.id_ = this->id_;
+    msg->dst_.endpoint_.idx_ = this->idx_;
     deliver(msg);
   }
 };
@@ -62,7 +65,8 @@ class collective_proxy {
   static collective_proxy<T, Mapper> construct(void) {
     collective_index_t id{(std::uint32_t)CmiMyPe(), local_collective_count_++};
     auto* msg = new message();
-    msg->id_ = id;
+    msg->dst_kind_ = kEndpoint;
+    msg->dst_.endpoint_.id_ = id;
     msg->set_collective_kind(kind());
     CmiSyncBroadcastAllAndFree(sizeof(message), (char*)msg);
     return collective_proxy<T, Mapper>(id);

@@ -21,7 +21,7 @@ inline void finalize(void) {
   ConverseExit();
 }
 
-inline void exit(void) { CsdExitScheduler(); }
+void exit(message* msg);
 }  // namespace cmk
 
 #endif
