@@ -1,9 +1,7 @@
 #ifndef __CMK_CORE_HH__
 #define __CMK_CORE_HH__
 
-#include <converse.h>
-
-#include <mutex>
+#include "common.hh"
 
 namespace cmk {
 void start_fn_(int, char**);

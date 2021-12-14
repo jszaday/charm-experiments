@@ -1,7 +1,7 @@
-#include "ep.hh"
+#include "core.hh"
 
 #include "collective.hh"
-#include "core.hh"
+#include "ep.hh"
 
 namespace cmk {
 CpvDeclare(int, deliver_handler_);
@@ -21,7 +21,7 @@ void start_fn_(int, char**) {
 
 void deliver(void* raw) {
   auto* msg = static_cast<message*>(raw);
-  if (auto* kind = msg->kind()) {
+  if (auto* kind = msg->collective_kind()) {
     auto& rec = collective_kinds_[*kind - 1];
     auto* cons = rec(msg->id_);
     auto ins = collective_table_.emplace(msg->id_, cons);

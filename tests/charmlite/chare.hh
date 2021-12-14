@@ -69,7 +69,8 @@ struct chare : public chare_base_ {
 template <typename T>
 struct property_setter_<
     T, typename std::enable_if<std::is_base_of<chare_base_, T>::value>::type> {
-  void operator()(T* t, const collective_index_t& id, const chare_index_t& idx) {
+  void operator()(T* t, const collective_index_t& id,
+                  const chare_index_t& idx) {
     t->parent_ = id;
     t->index_ = idx;
   }
