@@ -19,14 +19,14 @@ entry_id_t entry_fn_helper_<Fn, Constructor>::id_ =
     register_entry_fn_<Fn, Constructor>();
 
 template <typename T>
-static chare_id_t register_chare_(void) {
+static chare_kind_t register_chare_(void) {
   auto id = chare_table_.size() + 1;
   chare_table_.emplace_back(typeid(T).name(), sizeof(T));
   return id;
 }
 
 template <typename T>
-chare_id_t chare_id_helper_<T>::id_ = register_chare_<T>();
+chare_kind_t chare_kind_helper_<T>::kind_ = register_chare_<T>();
 
 template <typename T, typename Mapper>
 static collective_base_* construct_collective_(const collective_index_t& id) {

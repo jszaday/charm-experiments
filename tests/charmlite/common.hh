@@ -28,6 +28,9 @@ struct collective_index_t {
   }
 };
 
+using collective_constructor_t =
+    collective_base_* (*)(const collective_index_t&);
+
 template <typename T>
 struct message_deleter_;
 
@@ -53,18 +56,23 @@ struct entry_record_ {
       : fn_(fn), is_constructor_(is_constructor) {}
 };
 
+/* general terminology :
+ * - kind refers to a family of instances
+ * - id/index refers to a specific instance
+ */
+
 using entry_table_t = std::vector<entry_record_>;
 using entry_id_t = typename entry_table_t::size_type;
 
 using chare_table_t = std::vector<chare_record_>;
-using chare_id_t = typename chare_table_t::size_type;
+using chare_kind_t = typename chare_table_t::size_type;
+
+using collective_kinds_t = std::vector<collective_constructor_t>;
+using collective_kind_t = typename collective_kinds_t::size_type;
 
 using chare_index_t =
     typename std::conditional<std::is_integral<CmiUInt16>::value, CmiUInt16,
                               CmiUInt8>::type;
-
-using collective_constructor_t =
-    collective_base_* (*)(const collective_index_t&);
 
 using collective_table_t =
     std::unordered_map<collective_index_t, std::unique_ptr<collective_base_>,
@@ -75,13 +83,10 @@ using collective_buffer_t =
     std::unordered_map<collective_index_t, message_buffer_t,
                        collective_index_hasher_>;
 
-using collective_kinds_t = std::vector<collective_constructor_t>;
-using collective_kind_t = typename collective_kinds_t::size_type;
-
 constexpr entry_id_t nil_entry_ = 0;
 constexpr collective_kind_t nil_kind_ = 0;
 
-// TODO ( make these cpv variables! )
+// FIXME ( make these cpv variables! )
 extern entry_table_t entry_table_;
 extern chare_table_t chare_table_;
 extern collective_kinds_t collective_kinds_;

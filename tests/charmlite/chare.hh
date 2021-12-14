@@ -6,8 +6,8 @@
 namespace cmk {
 
 template <typename T>
-struct chare_id_helper_ {
-  static chare_id_t id_;
+struct chare_kind_helper_ {
+  static chare_kind_t kind_;
 };
 
 struct chare_record_ {
@@ -24,7 +24,7 @@ struct chare_record_ {
 
 template <typename T>
 const chare_record_& record_for(void) {
-  auto id = chare_id_helper_<T>::id_;
+  auto id = chare_kind_helper_<T>::kind_;
   return chare_table_[id - 1];
 }
 
