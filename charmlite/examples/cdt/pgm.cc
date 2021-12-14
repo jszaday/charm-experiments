@@ -114,6 +114,8 @@ struct test : cmk::chare<test, int> {
       local->consume(this->collective());
 
       // start completion detection if we haven't already
+      // (each pe could start its own completion detection
+      //  but this ensures that broadcasts are working!)
       if (!detection_started_ && (this->index() == 0)) {
         detector.broadcast<completion::detection_message,
                            &completion::start_detection>(
@@ -131,16 +133,12 @@ struct test : cmk::chare<test, int> {
 int main(int argc, char** argv) {
   cmk::initialize(argc, argv);
   if (CmiMyNode() == 0) {
-    // establish the groups
+    // establish detector and participant groups
     auto detector = cmk::group_proxy<completion>::construct();
     auto* dm = new cmk::data_message<decltype(detector)>(detector);
-    auto arr = cmk::group_proxy<test>::construct(dm);
-    // send each message a "produce" message
-    // to start the process
-    for (auto i = 0; i < CmiNumPes(); i++) {
-      auto elt = arr[i];
-      elt.send<cmk::message, &test::produce>(new cmk::message);
-    }
+    auto elts = cmk::group_proxy<test>::construct(dm);
+    // send each element a "produce" message to start the process
+    elts.broadcast<cmk::message, &test::produce>(new cmk::message);
   }
   cmk::finalize();
   return 0;
