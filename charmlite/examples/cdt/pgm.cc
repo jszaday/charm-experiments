@@ -1,7 +1,4 @@
-/* charmlite demo
- *
- * merely follows familiar naming conventions
- * charmxi is NOT used, all achieved via TMP
+/* charmlite completion detection demo
  *
  * author: j. szaday <szaday2@illinois.edu>
  */
@@ -86,10 +83,10 @@ struct completion : public cmk::chare<completion, int> {
 };
 
 struct test : cmk::chare<test, int> {
-  cmk::collective_proxy<completion> detector;
+  cmk::group_proxy<completion> detector;
   bool detection_started_;
 
-  test(cmk::data_message<cmk::collective_proxy<completion>>* msg)
+  test(cmk::data_message<cmk::group_proxy<completion>>* msg)
       : detector(msg->value()), detection_started_(false) {}
 
   void produce(cmk::message* msg) {
@@ -100,7 +97,7 @@ struct test : cmk::chare<test, int> {
     } else {
       CmiPrintf("%d> producing %d value(s)...\n", CmiMyPe(), CmiNumPes());
       detector.local_branch()->produce(this->collective(), CmiNumPes());
-      cmk::collective_proxy<test> col(this->collective());
+      cmk::group_proxy<test> col(this->collective());
       col.broadcast<cmk::message, &test::consume>(msg);
     }
   }
@@ -116,12 +113,12 @@ struct test : cmk::chare<test, int> {
 
       local->consume(this->collective());
 
-      if (!detection_started_) {
-        // TODO (broadcast isn't working here -- need to investigate buffering)
-        detector[CmiMyPe()]
-            .send<completion::detection_message, &completion::start_detection>(
-                new completion::detection_message(
-                    this->collective(), cmk::callback::construct<cmk::exit>()));
+      // start completion detection if we haven't already
+      if (!detection_started_ && (this->index() == 0)) {
+        detector.broadcast<completion::detection_message,
+                           &completion::start_detection>(
+            new completion::detection_message(
+                this->collective(), cmk::callback::construct<cmk::exit>()));
 
         detection_started_ = true;
       }
@@ -134,17 +131,16 @@ struct test : cmk::chare<test, int> {
 int main(int argc, char** argv) {
   cmk::initialize(argc, argv);
   if (CmiMyNode() == 0) {
-    // create a collective
-    auto detector = cmk::collective_proxy<completion>::construct();
-    auto arr = cmk::collective_proxy<test>::construct();
+    // establish the groups
+    auto detector = cmk::group_proxy<completion>::construct();
+    auto* dm = new cmk::data_message<decltype(detector)>(detector);
+    auto arr = cmk::group_proxy<test>::construct(dm);
+    // send each message a "produce" message
+    // to start the process
     for (auto i = 0; i < CmiNumPes(); i++) {
-      detector[i].insert();
       auto elt = arr[i];
-      elt.insert(new cmk::data_message<decltype(detector)>(detector));
       elt.send<cmk::message, &test::produce>(new cmk::message);
     }
-    detector.done_inserting();
-    arr.done_inserting();
   }
   cmk::finalize();
   return 0;

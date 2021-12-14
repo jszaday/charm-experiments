@@ -54,8 +54,12 @@ struct index_view {
   static_assert(sizeof(T) <= sizeof(chare_index_t),
                 "index must fit in constraints!");
 
-  static const T& reinterpret(const chare_index_t& idx) {
+  static const T& decode(const chare_index_t& idx) {
     return reinterpret_cast<const T&>(idx);
+  }
+
+  static chare_index_t encode(const T& idx) {
+    return static_cast<chare_index_t>(idx);
   }
 };
 
