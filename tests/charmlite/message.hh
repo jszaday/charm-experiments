@@ -28,6 +28,7 @@ struct message_helper_ {
 struct message {
   char core_[header_size];
   std::bitset<8> flags_;
+  // TODO ( think of better names? )
   message_kind_t kind_;
   collective_index_t id_;
   chare_index_t idx_;
