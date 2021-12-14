@@ -7,9 +7,72 @@
 
 // a chare that uses an int for its index
 struct completion : public cmk::chare<completion, int> {
+  struct count;
+  struct status;
+  cmk::collective_map<status> statii;
+
   using detection_message =
       cmk::data_message<std::tuple<cmk::collective_index_t, cmk::callback>>;
+  using count_message = cmk::data_message<count>;
 
+  completion(void) = default;
+
+  // obtain the completion status of a collective
+  // (setting a callback message if one isn't present)
+  status& get_status(cmk::collective_index_t idx,
+                     detection_message* msg = nullptr) {
+    auto find = this->statii.find(idx);
+    if (find == std::end(this->statii)) {
+      find = this->statii.emplace(idx, msg).first;
+    } else if (msg) {
+      find->second.msg = msg;
+    }
+    return find->second;
+  }
+
+  // starts completion detection on _this_ pe
+  // (all pes need to start it for it to complete)
+  void start_detection(detection_message* msg) {
+    auto& val = msg->value();
+    auto& idx = std::get<0>(val);
+    auto& status = this->get_status(idx, msg);
+    if (status.complete) {
+      // invoke the callback when we complete
+      // broadcasting it to all pes
+      // TODO ( cb's should be user-scoped )
+      std::get<1>(val).send(cmk::all, msg);
+    } else {
+      // contribute to the all_reduce with other participants
+      // TODO ( need to provide a tag if there are multiple reductions )
+      auto* count = new count_message(this->collective(), idx, status.lcount);
+      cmk::all_reduce<cmk::add<typename count_message::type>, receive_count_>(
+          count);
+    }
+  }
+
+  // produce one or more events
+  void produce(cmk::collective_index_t idx, std::int64_t n = 1) {
+    this->get_status(idx).lcount += n;
+  }
+
+  // consume one or more events
+  void consume(cmk::collective_index_t idx, std::int64_t n = 1) {
+    this->produce(idx, -n);
+  }
+
+ private:
+  // receive the global-count from the all-reduce
+  // and update the status accordingly
+  static void receive_count_(cmk::message* msg) {
+    auto& gcount = static_cast<count_message*>(msg)->value();
+    auto* self = cmk::lookup(gcount.detector)->lookup<completion>(CmiMyPe());
+    auto& status = self->get_status(gcount.target);
+    status.complete = (gcount.gcount == 0);
+    self->start_detection(status.msg);
+    cmk::message::free(msg);
+  }
+
+ public:
   struct status {
     detection_message* msg;
     std::int64_t lcount;
@@ -27,59 +90,12 @@ struct completion : public cmk::chare<completion, int> {
           std::int64_t gcount_)
         : detector(detector_), target(target_), gcount(gcount_) {}
 
+    // used by the cmk::add operator
     count& operator+=(const count& other) {
       this->gcount += other.gcount;
       return *this;
     }
   };
-
-  cmk::collective_map<status> statii;
-
-  completion(void) = default;
-
-  using count_message = cmk::data_message<count>;
-
-  status& get_status(cmk::collective_index_t idx,
-                     detection_message* msg = nullptr) {
-    auto find = this->statii.find(idx);
-    if (find == std::end(this->statii)) {
-      find = this->statii.emplace(idx, msg).first;
-    } else if (msg) {
-      find->second.msg = msg;
-    }
-    return find->second;
-  }
-
-  void start_detection(detection_message* msg) {
-    auto& val = msg->value();
-    auto& idx = std::get<0>(val);
-    auto& status = this->get_status(idx, msg);
-    CmiEnforce(msg != nullptr);
-    if (status.complete) {
-      std::get<1>(val).send(cmk::all, msg);
-    } else {
-      auto* count = new count_message(this->collective(), idx, status.lcount);
-      cmk::all_reduce<cmk::add<typename count_message::type>, receive_count_>(
-          count);
-    }
-  }
-
-  void produce(cmk::collective_index_t idx, std::int64_t n = 1) {
-    this->get_status(idx).lcount += n;
-  }
-
-  void consume(cmk::collective_index_t idx, std::int64_t n = 1) {
-    this->produce(idx, -n);
-  }
-
-  static void receive_count_(cmk::message* msg) {
-    auto& gcount = static_cast<count_message*>(msg)->value();
-    auto* self = cmk::lookup(gcount.detector)->lookup<completion>(CmiMyPe());
-    auto& status = self->get_status(gcount.target);
-    status.complete = (gcount.gcount == 0);
-    self->start_detection(status.msg);
-    cmk::message::free(msg);
-  }
 };
 
 struct test : cmk::chare<test, int> {
@@ -93,10 +109,13 @@ struct test : cmk::chare<test, int> {
     auto* local = detector.local_branch();
     if (local == nullptr) {
       auto elt = this->element_proxy();
+      // put the message back to await local branch creation
       elt.send<cmk::message, &test::produce>(msg);
     } else {
+      // each pe will expect a message from each pe (inclusive)
       CmiPrintf("%d> producing %d value(s)...\n", CmiMyPe(), CmiNumPes());
       detector.local_branch()->produce(this->collective(), CmiNumPes());
+      // so send the messages
       cmk::group_proxy<test> col(this->collective());
       col.broadcast<cmk::message, &test::consume>(msg);
     }
@@ -109,13 +128,13 @@ struct test : cmk::chare<test, int> {
       // put the message back to await local branch creation
       elt.send<cmk::message, &test::consume>(msg);
     } else {
+      // indicate that we received an expected message
       CmiPrintf("%d> consuming a value...\n", CmiMyPe());
-
       local->consume(this->collective());
 
       // start completion detection if we haven't already
       // (each pe could start its own completion detection
-      //  but this ensures that broadcasts are working!)
+      //  but this checks that broadcasts are working!)
       if (!detection_started_ && (this->index() == 0)) {
         detector.broadcast<completion::detection_message,
                            &completion::start_detection>(
