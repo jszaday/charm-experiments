@@ -4,5 +4,6 @@
 #include "collective.hh"
 #include "core.hh"
 #include "proxy.hh"
+#include "reduction.hh"
 
 #endif

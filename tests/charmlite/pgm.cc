@@ -23,8 +23,9 @@ struct foo : public cmk::chare<int> {
   void bar(test_message* msg) {
     CmiPrintf("ch%d@pe%d> %d+%d=%d\n", this->index(), CmiMyPe(), this->val,
               msg->val, this->val + msg->val);
-    delete msg;
-    cmk::exit();  // maybe add qd?
+    // note -- this is a cross-pe reduction
+    // (cross-chare reductions not yet implemented)
+    cmk::reduce<cmk::nop, cmk::exit>(msg);
   }
 };
 
@@ -41,7 +42,7 @@ int main(int argc, char** argv) {
       // and send it a message
       elt.send<test_message, &foo::bar>(new test_message(i + 1));
     }
-    // currently a no-op, will unblock reductions
+    // currently does nothing, will unblock reductions
     arr.done_inserting();
   }
   cmk::finalize();
