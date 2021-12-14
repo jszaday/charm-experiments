@@ -20,6 +20,8 @@ inline void finalize(void) {
   CsdScheduleForever();
   ConverseExit();
 }
+
+inline void exit(void) { CsdExitScheduler(); }
 }  // namespace cmk
 
 #endif

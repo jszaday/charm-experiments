@@ -67,6 +67,8 @@ class collective_proxy {
     CmiSyncBroadcastAllAndFree(sizeof(message), (char*)msg);
     return collective_proxy<T, Mapper>(id);
   }
+
+  void done_inserting(void) {}
 };
 
 }  // namespace cmk
