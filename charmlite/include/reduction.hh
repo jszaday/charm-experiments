@@ -29,6 +29,18 @@ void* converse_combiner_(int* size, void* local, void** remote, int count) {
   return sum;
 }
 
+template <callback_t Callback>
+void all_reduce_impl_(message* msg) {
+  // update destination
+  msg->is_broadcast() = true;
+  msg->dst_kind_ = kCallback;
+  msg->dst_.callback_ = callback_helper_<Callback>::id_;
+  // broadcast message to other pes
+  CmiSyncBroadcast(msg->total_size_, (char*)msg);
+  // then deliver it locally
+  deliver(msg);
+}
+
 template <combiner_t Combiner, callback_t Callback>
 void reduce(message* msg) {
   msg->dst_kind_ = kCallback;
@@ -37,7 +49,19 @@ void reduce(message* msg) {
   CmiReduce(msg, msg->total_size_, converse_combiner_);
 }
 
+template <combiner_t Combiner, callback_t Callback>
+void all_reduce(message* msg) {
+  reduce<Combiner, all_reduce_impl_<Callback>>(msg);
+}
+
 message* nop(message* msg, message*) { return msg; }
+
+template <typename T>
+message* add(message* lhs, message* rhs) {
+  using type = data_message<T>*;
+  static_cast<type>(lhs)->value() += static_cast<type>(rhs)->value();
+  return lhs;
+}
 }  // namespace cmk
 
 #endif

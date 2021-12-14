@@ -17,9 +17,9 @@ struct chare_record_ {
   chare_record_(const char* name, std::size_t size)
       : name_(name), size_(size) {}
 
-  void* allocate(void) const { return ::operator new (this->size_); }
+  void* allocate(void) const { return ::operator new(this->size_); }
 
-  void deallocate(void* obj) const { ::operator delete (obj); }
+  void deallocate(void* obj) const { ::operator delete(obj); }
 };
 
 template <typename T>
@@ -33,7 +33,7 @@ struct property_setter_ {
   void operator()(T*, const collective_index_t&, const chare_index_t&) {}
 };
 
-template <typename Index>
+template <typename T, typename Index>
 struct chare;
 
 struct chare_base_ {
@@ -45,7 +45,7 @@ struct chare_base_ {
   template <typename T, typename Enable>
   friend class property_setter_;
 
-  template <typename Index>
+  template <typename T, typename Index>
   friend class chare;
 };
 
@@ -59,13 +59,6 @@ struct index_view {
   }
 };
 
-template <typename Index>
-struct chare : public chare_base_ {
-  const Index& index(void) {
-    return index_view<Index>::reinterpret(this->index_);
-  }
-};
-
 template <typename T>
 struct property_setter_<
     T, typename std::enable_if<std::is_base_of<chare_base_, T>::value>::type> {
@@ -76,8 +69,8 @@ struct property_setter_<
   }
 };
 
-template <typename Index>
-static Index index_for_impl_(const chare<Index>*);
+template <typename T, typename Index>
+static Index index_for_impl_(const chare<T, Index>*);
 
 template <typename T>
 using index_for_t = decltype(index_for_impl_(std::declval<T*>()));

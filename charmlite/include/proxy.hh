@@ -19,6 +19,7 @@ class element_proxy {
   template <typename Message>
   void insert(Message* msg) {
     msg->dst_kind_ = kEndpoint;
+    msg->is_broadcast() = false;
     msg->dst_.endpoint_.ep_ = constructor<T, Message*>();
     msg->dst_.endpoint_.id_ = this->id_;
     msg->dst_.endpoint_.idx_ = this->idx_;
@@ -28,6 +29,7 @@ class element_proxy {
   void insert(void) {
     auto* msg = new message;
     msg->dst_kind_ = kEndpoint;
+    msg->is_broadcast() = false;
     msg->dst_.endpoint_.ep_ = constructor<T, void>();
     msg->dst_.endpoint_.id_ = this->id_;
     msg->dst_.endpoint_.idx_ = this->idx_;
@@ -37,6 +39,7 @@ class element_proxy {
   template <typename Message, member_fn_t<T, Message> Fn>
   void send(Message* msg) {
     msg->dst_kind_ = kEndpoint;
+    msg->is_broadcast() = false;
     msg->dst_.endpoint_.ep_ = entry<member_fn_t<T, Message>, Fn>();
     msg->dst_.endpoint_.id_ = this->id_;
     msg->dst_.endpoint_.idx_ = this->idx_;
@@ -53,6 +56,14 @@ class collective_proxy {
 
   collective_proxy(const collective_index_t& id) : id_(id) {}
 
+  // TODO ( isolate this to group proxies )
+  template <typename Index = index_type>
+  typename std::enable_if<std::is_same<Index, int>::value, T*>::type
+  local_branch(void) {
+    auto* loc = lookup(this->id_);
+    return loc ? loc->template lookup<T>(CmiMyPe()) : nullptr;
+  }
+
   static const collective_kind_t& kind(void) {
     return collective_helper_<collective<T, Mapper>>::kind_;
   }
@@ -62,17 +73,41 @@ class collective_proxy {
     return element_proxy<T>(this->id_, view);
   }
 
+  // TODO ( this will ONLY work for group proxies )
+  template <typename Message, member_fn_t<T, Message> Fn>
+  void broadcast(Message* msg) {
+    msg->dst_kind_ = kEndpoint;
+    msg->is_broadcast() = true;
+    msg->dst_.endpoint_.ep_ = entry<member_fn_t<T, Message>, Fn>();
+    msg->dst_.endpoint_.id_ = this->id_;
+    CmiSyncBroadcastAllAndFree(msg->total_size_, (char*)msg);
+  }
+
   static collective_proxy<T, Mapper> construct(void) {
     collective_index_t id{(std::uint32_t)CmiMyPe(), local_collective_count_++};
     auto* msg = new message();
     msg->dst_kind_ = kEndpoint;
+    msg->is_broadcast() = true;
     msg->dst_.endpoint_.id_ = id;
     msg->set_collective_kind(kind());
-    CmiSyncBroadcastAllAndFree(sizeof(message), (char*)msg);
+    CmiSyncBroadcastAllAndFree(msg->total_size_, (char*)msg);
     return collective_proxy<T, Mapper>(id);
   }
 
   void done_inserting(void) {}
+};
+
+template <typename T, typename Index>
+struct chare : public chare_base_ {
+  const Index& index(void) const {
+    return index_view<Index>::reinterpret(this->index_);
+  }
+
+  const collective_index_t& collective(void) const { return this->parent_; }
+
+  const cmk::element_proxy<T> element_proxy(void) {
+    return cmk::element_proxy<T>(this->parent_, this->index_);
+  }
 };
 
 }  // namespace cmk

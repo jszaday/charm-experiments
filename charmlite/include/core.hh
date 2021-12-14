@@ -6,6 +6,15 @@
 namespace cmk {
 void start_fn_(int, char**);
 
+inline collective_base_* lookup(collective_index_t idx) {
+  auto find = collective_table_.find(idx);
+  if (find == std::end(collective_table_)) {
+    return nullptr;
+  } else {
+    return (find->second).get();
+  }
+}
+
 inline void register_deliver_(void) {
   CpvInitialize(int, deliver_handler_);
   CpvAccess(deliver_handler_) = CmiRegisterHandler(deliver);

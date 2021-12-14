@@ -16,7 +16,7 @@ struct test_message : public cmk::plain_message<test_message> {
 };
 
 // a chare that uses an int for its index
-struct foo : public cmk::chare<int> {
+struct foo : public cmk::chare<foo, int> {
   int val;
 
   foo(test_message* msg) : val(msg->val) { delete msg; }

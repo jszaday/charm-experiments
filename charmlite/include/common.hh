@@ -61,10 +61,12 @@ struct entry_record_ {
  * - id/index refers to a specific instance
  */
 
+// TODO ( rename to callback_fn_t )
 using callback_t = void (*)(message*);
 using callback_table_t = std::vector<callback_t>;
 using callback_id_t = typename callback_table_t::size_type;
 
+// TODO ( rename to combiner_fn_t )
 using combiner_t = message* (*)(message*, message*);
 using combiner_table_t = std::vector<combiner_t>;
 using combiner_id_t = typename combiner_table_t::size_type;
@@ -82,9 +84,11 @@ using chare_index_t =
     typename std::conditional<std::is_integral<CmiUInt16>::value, CmiUInt16,
                               CmiUInt8>::type;
 
-using collective_table_t =
-    std::unordered_map<collective_index_t, std::unique_ptr<collective_base_>,
-                       collective_index_hasher_>;
+template <typename T>
+using collective_map =
+    std::unordered_map<collective_index_t, T, collective_index_hasher_>;
+
+using collective_table_t = collective_map<std::unique_ptr<collective_base_>>;
 
 using message_buffer_t = std::deque<message_ptr<message>>;
 using collective_buffer_t =

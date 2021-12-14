@@ -14,7 +14,7 @@ BINARY=pgm
 	$(CXX) $(OPTS) -c -o ../../libs/core.o ../../src/core.cc
 
 format:
-	clang-format $(FORMAT_OPTS) ../../src/*.cc ../../include/*.hh
+	clang-format $(FORMAT_OPTS) ../../src/*.cc ../../include/*.hh ./$(BINARY).cc
 
 clean:
 	rm -f ../../libs/core.o *.o charmrun $(BINARY)

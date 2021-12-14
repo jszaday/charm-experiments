@@ -49,12 +49,12 @@ struct message {
  private:
   static constexpr auto has_combiner = 0;
   static constexpr auto has_collective_kind = has_combiner + 1;
-  static constexpr auto is_exiting_ = has_collective_kind + 1;
+  static constexpr auto is_broadcast_ = has_collective_kind + 1;
 
   void *offset_(void) { return &(this->dst_.endpoint_.idx_); }
 
  public:
-  message(void) : kind_(0), total_size_(header_size) {
+  message(void) : kind_(0), total_size_(sizeof(message)) {
     CmiSetHandler(this, CpvAccess(deliver_handler_));
   }
 
@@ -96,7 +96,7 @@ struct message {
     } else {
       auto &kind = static_cast<message *>(msg)->kind_;
       if (kind == 0) {
-        message::operator delete (msg);
+        message::operator delete(msg);
       } else {
         message_table_[kind - 1].deleter_(msg);
       }
@@ -107,14 +107,36 @@ struct message {
 
   void operator delete(void *blk) { CmiFree(blk); }
 
-  std::bitset<8>::reference is_exiting(void) {
-    return this->flags_[is_exiting_];
+  std::bitset<8>::reference is_broadcast(void) {
+    return this->flags_[is_broadcast_];
   }
 };
 
 template <typename T>
 struct plain_message : public message {
   plain_message(void) : message(message_helper_<T>::kind_, sizeof(T)) {}
+};
+
+template <typename T>
+struct data_message : public plain_message<data_message<T>> {
+  using type = T;
+
+ private:
+  using storage_type =
+      typename std::aligned_storage<sizeof(T), alignof(T)>::type;
+  storage_type storage_;
+
+ public:
+  template <typename... Args>
+  data_message(Args &&...args) {
+    new (&(this->value())) T(std::forward<Args>(args)...);
+  }
+
+  T &value(void) { return *(reinterpret_cast<T *>(&(this->storage_))); }
+
+  const T &value(void) const {
+    return *(reinterpret_cast<const T *>(&(this->storage_)));
+  }
 };
 }  // namespace cmk
 

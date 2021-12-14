@@ -15,7 +15,13 @@ struct collective_base_ {
   collective_index_t id_;
   collective_base_(const collective_index_t& id) : id_(id) {}
   virtual ~collective_base_() = default;
+  virtual void* lookup(const chare_index_t&) = 0;
   virtual void deliver(message* msg) = 0;
+
+  template <typename T>
+  inline T* lookup(const chare_index_t& idx) {
+    return static_cast<T*>(this->lookup(idx));
+  }
 };
 
 template <typename T, typename Mapper = default_mapper>
@@ -26,6 +32,15 @@ struct collective : public collective_base_ {
   std::unordered_map<chare_index_t, std::unique_ptr<T>> chares_;
 
   collective(const collective_index_t& id) : collective_base_(id) {}
+
+  virtual void* lookup(const chare_index_t& idx) override {
+    auto find = this->chares_.find(idx);
+    if (find == std::end(this->chares_)) {
+      return nullptr;
+    } else {
+      return (find->second).get();
+    }
+  }
 
   void flush_buffers(const chare_index_t& idx) {
     auto find = this->buffers_.find(idx);
@@ -75,6 +90,7 @@ struct collective : public collective_base_ {
           return false;
         } else {
           // otherwise route to the home pe
+          // XXX ( update bcast? prolly not. )
           CmiSyncSendAndFree(pe, msg->total_size_, (char*)msg);
         }
       } else {

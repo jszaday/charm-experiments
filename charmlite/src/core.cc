@@ -22,14 +22,14 @@ void start_fn_(int, char**) {
   CsdScheduleForever();
 }
 
-// circulate an exit message between pes
-// TODO ( don't req a flag! use src pe or something )
+// handle an exit message on each pe
+// circulate it if not received via broadcast
 void exit(message* msg) {
-  auto xting = msg->is_exiting();
-  if (xting) {
+  auto bcast = msg->is_broadcast();
+  if (bcast) {
     message::free(msg);
   } else {
-    xting = true;
+    bcast = true;
     CmiSyncBroadcastAndFree(msg->total_size_, (char*)msg);
   }
   CsdExitScheduler();
