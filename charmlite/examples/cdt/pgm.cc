@@ -6,14 +6,38 @@
 #include "cmk.decl.hh"
 
 // a chare that uses an int for its index
-struct completion : public cmk::chare<completion, int> {
+class completion : public cmk::chare<completion, int> {
+ public:
   struct count;
-  struct status;
-  cmk::collective_map<status> statii;
-
   using detection_message =
       cmk::data_message<std::tuple<cmk::collective_index_t, cmk::callback>>;
   using count_message = cmk::data_message<count>;
+
+  struct status {
+    detection_message* msg;
+    std::int64_t lcount;
+    bool complete;
+
+    status(detection_message* msg_) : msg(msg_), lcount(0), complete(false) {}
+  };
+
+  struct count {
+    cmk::collective_index_t detector;
+    cmk::collective_index_t target;
+    std::int64_t gcount;
+
+    count(cmk::collective_index_t detector_, cmk::collective_index_t target_,
+          std::int64_t gcount_)
+        : detector(detector_), target(target_), gcount(gcount_) {}
+
+    // used by the cmk::add operator
+    count& operator+=(const count& other) {
+      this->gcount += other.gcount;
+      return *this;
+    }
+  };
+
+  cmk::collective_map<status> statii;
 
   completion(void) = default;
 
@@ -71,31 +95,6 @@ struct completion : public cmk::chare<completion, int> {
     self->start_detection(status.msg);
     cmk::message::free(msg);
   }
-
- public:
-  struct status {
-    detection_message* msg;
-    std::int64_t lcount;
-    bool complete;
-
-    status(detection_message* msg_) : msg(msg_), lcount(0), complete(false) {}
-  };
-
-  struct count {
-    cmk::collective_index_t detector;
-    cmk::collective_index_t target;
-    std::int64_t gcount;
-
-    count(cmk::collective_index_t detector_, cmk::collective_index_t target_,
-          std::int64_t gcount_)
-        : detector(detector_), target(target_), gcount(gcount_) {}
-
-    // used by the cmk::add operator
-    count& operator+=(const count& other) {
-      this->gcount += other.gcount;
-      return *this;
-    }
-  };
 };
 
 struct test : cmk::chare<test, int> {
