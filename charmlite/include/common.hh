@@ -99,6 +99,9 @@ constexpr entry_id_t nil_entry_ = 0;
 constexpr collective_kind_t nil_kind_ = 0;
 // TODO ( make this more distinct -- ensure it plays nicely with chare_index_t )
 constexpr int all = -1;
+constexpr auto chare_bcast_root_ = std::numeric_limits<chare_index_t>::max();
+
+using bcast_id_t = std::uint16_t;
 
 // FIXME ( make these csv variables! )
 extern entry_table_t entry_table_;

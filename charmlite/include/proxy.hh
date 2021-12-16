@@ -64,8 +64,6 @@ class element_proxy {
   }
 };
 
-struct group_mapper : public default_mapper {};
-
 template <typename T>
 class collective_proxy_base_ {
  protected:
@@ -79,6 +77,14 @@ class collective_proxy_base_ {
   element_proxy<T> operator[](const index_type& idx) {
     auto& view = index_view<index_type>::decode(idx);
     return element_proxy<T>(this->id_, view);
+  }
+
+  template <typename Message, member_fn_t<T, Message> Fn>
+  void broadcast(Message* msg) {
+    // send a message to the broadcast root
+    new (&msg->dst_) destination(this->id_, chare_bcast_root_,
+                                 entry<member_fn_t<T, Message>, Fn>());
+    send(msg);
   }
 
   operator collective_index_t(void) const { return this->id_; }
@@ -125,28 +131,22 @@ class group_proxy : public collective_proxy_base_<T> {
     return loc ? loc->template lookup<T>(CmiMyPe()) : nullptr;
   }
 
-  // TODO ( this will ONLY work for group proxies )
-  template <typename Message, member_fn_t<T, Message> Fn>
-  void broadcast(Message* msg) {
-    new (&msg->dst_)
-        destination(this->id_, cmk::all, entry<member_fn_t<T, Message>, Fn>());
-    broadcast_helper_(msg);
-  }
-
   template <typename... Args>
   static group_proxy<T> construct(Args... args) {
-    collective_index_t id{(std::uint32_t)CmiMyPe(), local_collective_count_++};
+    collective_index_t id{(std::uint32_t)CmiMyPe(), ++local_collective_count_};
+    // TODO ( need to join these with some sort of "create local" thing )
     {
       auto kind = collective_helper_<collective<T, group_mapper>>::kind_;
       auto* msg = new message();
-      new (&msg->dst_) destination(id, cmk::all, kind);
+      new (&msg->dst_) destination(id, chare_bcast_root_, kind);
       msg->has_collective_kind() = true;
       CmiSyncBroadcastAllAndFree(msg->total_size_, (char*)msg);
     }
     {
       using arg_type = pack_helper_t<Args...>;
       auto* msg = message_extractor<arg_type>::get(args...);
-      new (&msg->dst_) destination(id, cmk::all, constructor<T, arg_type>());
+      new (&msg->dst_)
+          destination(id, chare_bcast_root_, constructor<T, arg_type>());
       broadcast_helper_(msg);
     }
     return group_proxy<T>(id);

@@ -15,6 +15,8 @@ struct destination {
     collective_index_t collective;
     chare_index_t chare;
     entry_id_t entry;
+    // reserved for collective communication
+    bcast_id_t bcast;
   };
 
   // TODO ( use an std::variant if we upgrade )
@@ -57,8 +59,10 @@ struct destination {
     switch (this->kind_) {
       case kCallback:
         return (this->impl_.callback_fn_.pe == cmk::all);
-      case kEndpoint:
-        return (this->impl_.endpoint_.chare == cmk::all);
+      case kEndpoint: {
+        auto& ep = this->impl_.endpoint_;
+        return ep.bcast || (ep.chare == chare_bcast_root_);
+      }
       default:
         return false;
     }

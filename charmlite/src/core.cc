@@ -17,8 +17,16 @@ collective_table_t collective_table_;
 collective_buffer_t collective_buffer_;
 std::uint32_t local_collective_count_ = 0;
 
-void start_fn_(int, char**) {
+void start_fn_(int, char** argv) {
   register_deliver_();
+#if CHARMLITE_TOPOLOGY
+  CmiNodeAllBarrier();
+  CmiInitCPUAffinity(argv);
+  CmiInitMemAffinity(argv);
+  CmiInitCPUTopology(argv);
+  // threads wait until _topoTree has been generated
+  CmiNodeAllBarrier();
+#endif
   CsdScheduleForever();
 }
 
@@ -34,7 +42,7 @@ void exit(message* msg) {
   CsdExitScheduler();
 }
 
-inline void deliver_to_endpoint_(message* msg) {
+inline void deliver_to_endpoint_(message* msg, bool immediate) {
   auto& ep = msg->dst_.endpoint();
   auto& col = ep.collective;
   if (msg->has_collective_kind()) {
@@ -49,8 +57,9 @@ inline void deliver_to_endpoint_(message* msg) {
     } else {
       auto& buffer = find->second;
       while (!buffer.empty()) {
-        obj->deliver(buffer.front().release());
+        auto* tmp = buffer.front().release();
         buffer.pop_front();
+        obj->deliver(tmp, immediate);
       }
     }
   } else {
@@ -58,7 +67,7 @@ inline void deliver_to_endpoint_(message* msg) {
     if (search == std::end(collective_table_)) {
       collective_buffer_[col].emplace_back(msg);
     } else {
-      search->second->deliver(msg);
+      search->second->deliver(msg, immediate);
     }
   }
 }
@@ -75,7 +84,7 @@ void deliver(void* raw) {
   auto* msg = static_cast<message*>(raw);
   switch (msg->dst_.kind()) {
     case kEndpoint:
-      deliver_to_endpoint_(msg);
+      deliver_to_endpoint_(msg, true);
       break;
     case kCallback:
       deliver_to_callback_(msg);
@@ -88,16 +97,19 @@ void deliver(void* raw) {
 void send(message* msg) {
   auto& dst = msg->dst_;
   switch (dst.kind()) {
-    case kCallback:
+    case kCallback: {
       auto& cb = dst.callback_fn();
       if (cb.pe == cmk::all) {
         CmiSyncBroadcastAllAndFree(msg->total_size_, (char*)msg);
       } else {
+        // then forward it along~
         CmiSyncSendAndFree(cb.pe, msg->total_size_, (char*)msg);
       }
       break;
+    }
     case kEndpoint:
-      CmiAbort("codepath not ready!");
+      CmiAssert(!msg->has_collective_kind());
+      deliver_to_endpoint_(msg, false);
       break;
     default:
       CmiAbort("invalid message destination");

@@ -36,17 +36,24 @@ struct property_setter_ {
 template <typename T, typename Index>
 struct chare;
 
+template <typename T, typename Mapper>
+class collective;
+
 struct chare_base_ {
  private:
   collective_index_t parent_;
   chare_index_t index_;
+  bcast_id_t last_bcast_ = 0;
 
  public:
-  template <typename T, typename Enable>
-  friend class property_setter_;
-
   template <typename T, typename Index>
   friend class chare;
+
+  template <typename T, typename Mapper>
+  friend class collective;
+
+  template <typename T, typename Enable>
+  friend class property_setter_;
 };
 
 template <typename T, typename Enable = void>

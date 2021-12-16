@@ -77,6 +77,11 @@ struct message {
     }
   }
 
+  message *clone(void) const {
+    // NOTE ( this will need to take un/packing into consideration )
+    return (message *)CmiCopyMsg((char *)this, this->total_size_);
+  }
+
   void *operator new(std::size_t sz) { return CmiAlloc(sz); }
 
   void operator delete(void *blk) { CmiFree(blk); }
@@ -110,6 +115,15 @@ struct data_message : public plain_message<data_message<T>> {
     return *(reinterpret_cast<const T *>(&(this->storage_)));
   }
 };
+
+// utility function to pick optimal send mechanism
+inline void send_helper_(int pe, message *msg) {
+  if (pe == CmiMyPe()) {
+    CmiPushPE(pe, msg);
+  } else {
+    CmiSyncSendAndFree(pe, msg->total_size_, (char *)msg);
+  }
+}
 }  // namespace cmk
 
 #endif
