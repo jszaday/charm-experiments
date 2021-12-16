@@ -25,35 +25,21 @@ struct message_helper_ {
   static message_kind_t kind_;
 };
 
-struct destination_ {
-  struct s_endpoint_ {
-    collective_index_t id_;
-    chare_index_t idx_;
-    entry_id_t ep_;
-  } endpoint_;
-
-  callback_id_t callback_;
-};
-
-enum destination_kind_ : std::uint8_t { kCallback, kEndpoint };
-
 struct message {
   char core_[header_size];
   std::bitset<8> flags_;
   // TODO ( think of better names? )
   message_kind_t kind_;
-  destination_kind_ dst_kind_;
-  destination_ dst_;
+  destination dst_;
   std::size_t total_size_;
 
  private:
-  static constexpr auto has_combiner = 0;
-  static constexpr auto has_collective_kind = has_combiner + 1;
-  static constexpr auto is_broadcast_ = has_collective_kind + 1;
-
-  void *offset_(void) { return &(this->dst_.endpoint_.idx_); }
+  static constexpr auto has_combiner_ = 0;
+  static constexpr auto has_collective_kind_ = has_combiner_ + 1;
 
  public:
+  using flag_type = std::bitset<8>::reference;
+
   message(void) : kind_(0), total_size_(sizeof(message)) {
     CmiSetHandler(this, CpvAccess(deliver_handler_));
   }
@@ -64,30 +50,18 @@ struct message {
     CmiSetHandler(this, CpvAccess(deliver_handler_));
   }
 
-  collective_kind_t *collective_kind(void) {
-    if (this->flags_[has_collective_kind]) {
-      return reinterpret_cast<collective_kind_t *>(this->offset_());
-    } else {
-      return nullptr;
-    }
-  }
+  flag_type has_combiner(void) { return this->flags_[has_combiner_]; }
 
-  void set_collective_kind(const collective_kind_t &kind) {
-    this->flags_[has_collective_kind] = true;
-    *(this->collective_kind()) = kind;
+  flag_type has_collective_kind(void) {
+    return this->flags_[has_collective_kind_];
   }
 
   combiner_id_t *combiner(void) {
-    if (this->flags_[has_combiner]) {
-      return reinterpret_cast<combiner_id_t *>(this->offset_());
+    if (this->has_combiner()) {
+      return reinterpret_cast<combiner_id_t *>(this->dst_.offset_());
     } else {
       return nullptr;
     }
-  }
-
-  void set_combiner(const combiner_id_t &id) {
-    this->flags_[has_combiner] = true;
-    *(this->combiner()) = id;
   }
 
   static void free(void *msg) {
@@ -107,9 +81,7 @@ struct message {
 
   void operator delete(void *blk) { CmiFree(blk); }
 
-  std::bitset<8>::reference is_broadcast(void) {
-    return this->flags_[is_broadcast_];
-  }
+  bool is_broadcast(void) { return this->dst_.is_broadcast(); }
 };
 
 template <typename T>

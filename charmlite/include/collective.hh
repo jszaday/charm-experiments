@@ -65,9 +65,9 @@ struct collective : public collective_base_ {
   }
 
   bool try_deliver(message* msg) {
-    auto& ep = msg->dst_.endpoint_;
-    auto* rec = record_for(ep.ep_);
-    auto& idx = ep.idx_;
+    auto& ep = msg->dst_.endpoint();
+    auto* rec = record_for(ep.entry);
+    auto& idx = ep.chare;
     auto pe = mapper_.pe_for(idx);
     // TODO ( temporary constraint, elements only created on home pe )
     if (rec->is_constructor_ && (pe == CmiMyPe())) {
@@ -106,7 +106,8 @@ struct collective : public collective_base_ {
     // if the delivery attempt fails --
     if (!try_deliver(msg)) {
       // buffer the message
-      this->buffers_[msg->dst_.endpoint_.idx_].emplace_back(msg);
+      auto& idx = msg->dst_.endpoint().chare;
+      this->buffers_[idx].emplace_back(msg);
     }
   }
 };

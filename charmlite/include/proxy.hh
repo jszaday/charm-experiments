@@ -51,21 +51,15 @@ class element_proxy {
   void insert(Args... args) {
     using arg_type = pack_helper_t<Args...>;
     auto* msg = message_extractor<arg_type>::get(args...);
-    msg->dst_kind_ = kEndpoint;
-    msg->is_broadcast() = false;
-    msg->dst_.endpoint_.ep_ = constructor<T, arg_type>();
-    msg->dst_.endpoint_.id_ = this->id_;
-    msg->dst_.endpoint_.idx_ = this->idx_;
+    new (&(msg->dst_))
+        destination(this->id_, this->idx_, constructor<T, arg_type>());
     deliver(msg);
   }
 
   template <typename Message, member_fn_t<T, Message> Fn>
   void send(Message* msg) {
-    msg->dst_kind_ = kEndpoint;
-    msg->is_broadcast() = false;
-    msg->dst_.endpoint_.ep_ = entry<member_fn_t<T, Message>, Fn>();
-    msg->dst_.endpoint_.id_ = this->id_;
-    msg->dst_.endpoint_.idx_ = this->idx_;
+    new (&(msg->dst_)) destination(this->id_, this->idx_,
+                                   entry<member_fn_t<T, Message>, Fn>());
     deliver(msg);
   }
 };
@@ -104,10 +98,8 @@ class collective_proxy : public collective_proxy_base_<T, Mapper> {
   static collective_proxy<T, Mapper> construct(void) {
     collective_index_t id{(std::uint32_t)CmiMyPe(), local_collective_count_++};
     auto* msg = new message();
-    msg->dst_kind_ = kEndpoint;
-    msg->is_broadcast() = true;
-    msg->dst_.endpoint_.id_ = id;
-    msg->set_collective_kind(base_type::kind());
+    new (&msg->dst_) destination(id, cmk::all, base_type::kind());
+    msg->has_collective_kind() = true;
     CmiSyncBroadcastAllAndFree(msg->total_size_, (char*)msg);
     return collective_proxy<T, Mapper>(id);
   }
@@ -135,10 +127,8 @@ class group_proxy : public collective_proxy_base_<T, group_mapper> {
   // TODO ( this will ONLY work for group proxies )
   template <typename Message, member_fn_t<T, Message> Fn>
   void broadcast(Message* msg) {
-    msg->dst_kind_ = kEndpoint;
-    msg->is_broadcast() = true;
-    msg->dst_.endpoint_.ep_ = entry<member_fn_t<T, Message>, Fn>();
-    msg->dst_.endpoint_.id_ = this->id_;
+    new (&msg->dst_)
+        destination(this->id_, cmk::all, entry<member_fn_t<T, Message>, Fn>());
     broadcast_helper_(msg);
   }
 
@@ -147,19 +137,14 @@ class group_proxy : public collective_proxy_base_<T, group_mapper> {
     collective_index_t id{(std::uint32_t)CmiMyPe(), local_collective_count_++};
     {
       auto* msg = new message();
-      msg->dst_kind_ = kEndpoint;
-      msg->is_broadcast() = true;
-      msg->dst_.endpoint_.id_ = id;
-      msg->set_collective_kind(base_type::kind());
+      new (&msg->dst_) destination(id, cmk::all, base_type::kind());
+      msg->has_collective_kind() = true;
       CmiSyncBroadcastAllAndFree(msg->total_size_, (char*)msg);
     }
     {
       using arg_type = pack_helper_t<Args...>;
       auto* msg = message_extractor<arg_type>::get(args...);
-      msg->dst_kind_ = kEndpoint;
-      msg->is_broadcast() = true;
-      msg->dst_.endpoint_.ep_ = constructor<T, arg_type>();
-      msg->dst_.endpoint_.id_ = id;
+      new (&msg->dst_) destination(id, cmk::all, constructor<T, arg_type>());
       broadcast_helper_(msg);
     }
     return group_proxy<T>(id);
@@ -169,12 +154,12 @@ class group_proxy : public collective_proxy_base_<T, group_mapper> {
   // TODO ( use spanning tree )
   static void broadcast_helper_(message* msg) {
     auto n = CmiNumPes();
-    auto& ep = msg->dst_.endpoint_;
+    auto& ep = msg->dst_.endpoint();
     for (auto i = 1; i < n; i++) {
-      ep.idx_ = index_view<index_type>::encode(i);
+      ep.chare = index_view<index_type>::encode(i);
       CmiSyncSend(i, msg->total_size_, (char*)msg);
     }
-    ep.idx_ = index_view<index_type>::encode(0);
+    ep.chare = index_view<index_type>::encode(0);
     CmiSyncSendAndFree(0, msg->total_size_, (char*)msg);
   }
 };

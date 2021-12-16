@@ -25,20 +25,21 @@ void start_fn_(int, char**) {
 // handle an exit message on each pe
 // circulate it if not received via broadcast
 void exit(message* msg) {
-  auto bcast = msg->is_broadcast();
-  if (bcast) {
+  if (msg->is_broadcast()) {
     message::free(msg);
   } else {
-    bcast = true;
+    msg->dst_.callback_fn().pe = cmk::all;
     CmiSyncBroadcastAndFree(msg->total_size_, (char*)msg);
   }
   CsdExitScheduler();
 }
 
 inline void deliver_to_endpoint_(message* msg) {
-  auto& col = msg->dst_.endpoint_.id_;
-  if (auto* kind = msg->collective_kind()) {
-    auto& rec = collective_kinds_[*kind - 1];
+  auto& ep = msg->dst_.endpoint();
+  auto& col = ep.collective;
+  if (msg->has_collective_kind()) {
+    auto kind = (collective_kind_t)ep.entry;
+    auto& rec = collective_kinds_[kind - 1];
     auto* obj = rec(col);
     auto ins = collective_table_.emplace(col, obj);
     CmiAssertMsg(ins.second, "insertion did not occur!");
@@ -62,16 +63,41 @@ inline void deliver_to_endpoint_(message* msg) {
   }
 }
 
-inline void deliver_to_callback_(message* msg) { (callback_for(msg))(msg); }
+inline void deliver_to_callback_(message* msg) {
+#if CMK_ERROR_CHECKING
+  auto pe = msg->dst_.callback_fn().pe;
+  CmiEnforce(pe == cmk::all || pe == CmiMyPe());
+#endif
+  (callback_for(msg))(msg);
+}
 
 void deliver(void* raw) {
   auto* msg = static_cast<message*>(raw);
-  switch (msg->dst_kind_) {
+  switch (msg->dst_.kind()) {
     case kEndpoint:
       deliver_to_endpoint_(msg);
       break;
     case kCallback:
       deliver_to_callback_(msg);
+      break;
+    default:
+      CmiAbort("invalid message destination");
+  }
+}
+
+void send(message* msg) {
+  auto& dst = msg->dst_;
+  switch (dst.kind()) {
+    case kCallback:
+      auto& cb = dst.callback_fn();
+      if (cb.pe == cmk::all) {
+        CmiSyncBroadcastAllAndFree(msg->total_size_, (char*)msg);
+      } else {
+        CmiSyncSendAndFree(cb.pe, msg->total_size_, (char*)msg);
+      }
+      break;
+    case kEndpoint:
+      CmiAbort("codepath not ready!");
       break;
     default:
       CmiAbort("invalid message destination");

@@ -97,8 +97,10 @@ using collective_buffer_t =
 
 constexpr entry_id_t nil_entry_ = 0;
 constexpr collective_kind_t nil_kind_ = 0;
+// TODO ( make this more distinct -- ensure it plays nicely with chare_index_t )
+constexpr int all = -1;
 
-// FIXME ( make these cpv variables! )
+// FIXME ( make these csv variables! )
 extern entry_table_t entry_table_;
 extern chare_table_t chare_table_;
 extern callback_table_t callback_table_;
@@ -109,7 +111,16 @@ extern collective_buffer_t collective_buffer_;
 extern std::uint32_t local_collective_count_;
 
 CpvExtern(int, deliver_handler_);
+
+struct destination;
+enum destination_kind : std::uint8_t { kInvalid = 0, kCallback, kEndpoint };
+
+// TODO (deliver is the converse handler)
 void deliver(void*);
+// TODO (send is the send fn // needs better names)
+void send(message*);
 }  // namespace cmk
+
+#include "destination.hh"
 
 #endif

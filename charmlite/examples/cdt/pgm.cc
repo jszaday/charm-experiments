@@ -62,9 +62,7 @@ class completion : public cmk::chare<completion, int> {
     auto& status = this->get_status(idx, msg);
     if (status.complete) {
       // invoke the callback when we complete
-      // broadcasting it to all pes
-      // TODO ( cb's should be user-scoped )
-      std::get<1>(val).send(cmk::all, msg);
+      std::get<1>(val).send(msg);
     } else {
       // contribute to the all_reduce with other participants
       // TODO ( need to provide a tag if there are multiple reductions )
@@ -131,14 +129,15 @@ struct test : cmk::chare<test, int> {
       CmiPrintf("%d> consuming a value...\n", CmiMyPe());
       local->consume(this->collective());
 
-      // start completion detection if we haven't already
-      // (each pe could start its own completion detection
-      //  but this checks that broadcasts are working!)
+      // start completion detection at "root" if we haven't already
       if (!detection_started_ && (this->index() == 0)) {
+        // call exit on all pes when we complete!
+        auto cb = cmk::callback::construct<cmk::exit>(cmk::all);
+        // (each pe could start its own completion detection
+        //  but this checks that broadcasts are working!)
         detector.broadcast<completion::detection_message,
                            &completion::start_detection>(
-            new completion::detection_message(
-                this->collective(), cmk::callback::construct<cmk::exit>()));
+            new completion::detection_message(this->collective(), cb));
 
         detection_started_ = true;
       }

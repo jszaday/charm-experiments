@@ -5,8 +5,6 @@
 
 namespace cmk {
 
-constexpr int all = -1;
-
 template <combiner_t Fn>
 struct combiner_helper_ {
   static combiner_id_t id_;
@@ -31,35 +29,26 @@ inline combiner_t combiner_for(message* msg) {
 }
 
 inline callback_t callback_for(message* msg) {
-  return (msg->dst_kind_ == kCallback) ? callback_for(msg->dst_.callback_)
-                                       : nullptr;
+  return (msg->dst_.kind() == kCallback)
+             ? callback_for(msg->dst_.callback_fn().id)
+             : nullptr;
 }
 
-struct callback {
-  destination_kind_ kind_;
-  destination_ dst_;
+class callback {
+  destination dst_;
 
-  void brand(message* msg) const {
-    msg->dst_ = dst_;
-    msg->dst_kind_ = this->kind_;
-  }
+  template <typename... Args>
+  callback(Args&&... args) : dst_(std::forward<Args>(args)...) {}
 
-  void send(int pe, message* msg) {
-    this->brand(msg);
-    auto bcast = msg->is_broadcast();
-    bcast = (pe == all);
-    if (bcast) {
-      CmiSyncBroadcastAllAndFree(msg->total_size_, (char*)msg);
-    } else {
-      CmiSyncSendAndFree(pe, msg->total_size_, (char*)msg);
-    }
+ public:
+  void send(message* msg) {
+    new (&(msg->dst_)) destination(this->dst_);
+    cmk::send(msg);
   }
 
   template <callback_t Callback>
-  static callback construct(void) {
-    callback cb{.kind_ = kCallback};
-    cb.dst_.callback_ = callback_helper_<Callback>::id_;
-    return std::move(cb);
+  static callback construct(int pe) {
+    return callback(callback_helper_<Callback>::id_, pe);
   }
 };
 }  // namespace cmk
