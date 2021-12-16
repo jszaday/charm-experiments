@@ -1,5 +1,9 @@
 /* charmlite completion detection demo
  *
+ * ( completion detection is important 
+ *   for hypercomm collectives, hence
+ *   giving priority to this! )
+ * 
  * author: j. szaday <szaday2@illinois.edu>
  */
 

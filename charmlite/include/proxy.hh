@@ -66,7 +66,7 @@ class element_proxy {
 
 struct group_mapper : public default_mapper {};
 
-template <typename T, typename Mapper = default_mapper>
+template <typename T>
 class collective_proxy_base_ {
  protected:
   collective_index_t id_;
@@ -76,40 +76,41 @@ class collective_proxy_base_ {
 
   collective_proxy_base_(const collective_index_t& id) : id_(id) {}
 
-  static const collective_kind_t& kind(void) {
-    return collective_helper_<collective<T, Mapper>>::kind_;
-  }
-
   element_proxy<T> operator[](const index_type& idx) {
     auto& view = index_view<index_type>::decode(idx);
     return element_proxy<T>(this->id_, view);
   }
+
+  operator collective_index_t(void) const { return this->id_; }
 };
 
-template <typename T, typename Mapper = default_mapper>
-class collective_proxy : public collective_proxy_base_<T, Mapper> {
-  using base_type = collective_proxy_base_<T, Mapper>;
+template <typename T>
+class collective_proxy : public collective_proxy_base_<T> {
+  using base_type = collective_proxy_base_<T>;
 
  public:
   using index_type = typename base_type::index_type;
 
   collective_proxy(const collective_index_t& id) : base_type(id) {}
 
-  static collective_proxy<T, Mapper> construct(void) {
+  // TODO ( disable using this with reserved mappers (i.e., node/group) )
+  template <typename Mapper = default_mapper>
+  static collective_proxy<T> construct(void) {
     collective_index_t id{(std::uint32_t)CmiMyPe(), local_collective_count_++};
+    auto kind = collective_helper_<collective<T, Mapper>>::kind_;
     auto* msg = new message();
-    new (&msg->dst_) destination(id, cmk::all, base_type::kind());
+    new (&msg->dst_) destination(id, cmk::all, kind);
     msg->has_collective_kind() = true;
     CmiSyncBroadcastAllAndFree(msg->total_size_, (char*)msg);
-    return collective_proxy<T, Mapper>(id);
+    return collective_proxy<T>(id);
   }
 
   void done_inserting(void) {}
 };
 
 template <typename T>
-class group_proxy : public collective_proxy_base_<T, group_mapper> {
-  using base_type = collective_proxy_base_<T, group_mapper>;
+class group_proxy : public collective_proxy_base_<T> {
+  using base_type = collective_proxy_base_<T>;
 
  public:
   using index_type = typename base_type::index_type;
@@ -136,8 +137,9 @@ class group_proxy : public collective_proxy_base_<T, group_mapper> {
   static group_proxy<T> construct(Args... args) {
     collective_index_t id{(std::uint32_t)CmiMyPe(), local_collective_count_++};
     {
+      auto kind = collective_helper_<collective<T, group_mapper>>::kind_;
       auto* msg = new message();
-      new (&msg->dst_) destination(id, cmk::all, base_type::kind());
+      new (&msg->dst_) destination(id, cmk::all, kind);
       msg->has_collective_kind() = true;
       CmiSyncBroadcastAllAndFree(msg->total_size_, (char*)msg);
     }
@@ -170,6 +172,8 @@ struct chare : public chare_base_ {
     return index_view<Index>::decode(this->index_);
   }
 
+  // NOTE ( if we associated chares with particular collectives
+  //        we could make this a typed proxy )
   const collective_index_t& collective(void) const { return this->parent_; }
 
   const cmk::element_proxy<T> element_proxy(void) {
