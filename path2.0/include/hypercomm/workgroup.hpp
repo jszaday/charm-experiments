@@ -1,35 +1,8 @@
 #ifndef __HYPERCOMM_WORKGROUP_HPP__
 #define __HYPERCOMM_WORKGROUP_HPP__
 
-#include <pup.h>
-#include <pup_stl.h>
-
-namespace hypercomm {
-struct task_id {
-  int host_;
-  std::uint32_t task_;
-
-  bool operator==(const task_id &other) const {
-    return (this->host_ == other.host_) && (this->task_ == other.task_);
-  }
-};
-
-struct task_id_hasher_ {
-  std::size_t operator()(const task_id &tid) const {
-    static_assert(sizeof(std::size_t) == sizeof(task_id),
-                  "sizes do not match!");
-    auto &cast = reinterpret_cast<const std::size_t &>(tid);
-    return std::hash<std::size_t>()(cast);
-  }
-};
-
-using task_kind_t = std::uint32_t;
-using continuation_id_t = std::uint32_t;
-} // namespace hypercomm
-
-PUPbytes(hypercomm::task_id);
-
 #include <hypercomm/backstage_pass.hpp>
+#include <hypercomm/pup_bridge.hpp>
 #include <hypercomm/workgroup.decl.h>
 
 namespace hypercomm {
@@ -40,19 +13,13 @@ struct task_base_ {
 
   task_base_(task_kind_t kind) : kind_(kind), active_(true) {}
 
-  void pup_base_(PUP::er &p) {
+  void pup_base_(puper_t &p) {
     CkAssert(active_);
 
     p | this->continuation_;
   }
 };
-} // namespace hypercomm
 
-namespace PUP {
-template <> struct ptr_helper<hypercomm::task_base_, false>;
-};
-
-namespace hypercomm {
 struct task_message : public CMessage_task_message {
   task_id tid;
   task_kind_t kind;
@@ -94,10 +61,10 @@ struct task_payload {
 
   task_payload(PUP::reconstruct) {}
 
-  void pup(PUP::er &p) {
-    if (p.isUnpacking()) {
+  void pup(puper_t &p) {
+    if (pup_is_unpacking(p)) {
       void *msg;
-      CkPupMessage(p, &msg);
+      pup_message(p, msg);
       this->src.reset((CkMessage *)msg);
       p | this->len;
       std::uintptr_t offset;
@@ -105,7 +72,7 @@ struct task_payload {
       this->data = (char *)msg + offset;
     } else {
       void *msg = this->src.get();
-      CkPupMessage(p, &msg);
+      pup_message(p, msg);
       CkAssert(msg == this->src.get());
       p | this->len;
       auto offset = (std::uintptr_t)this->data - (std::uintptr_t)msg;
@@ -134,11 +101,9 @@ template <typename T> struct task : public task_base_ {
   template <typename Data>
   void reduce(Data &data, CkReduction::reducerType type, const CkCallback &cb);
 
-  template <typename... Args>
-  void send(int index, Args&&... args);
+  template <typename... Args> void send(int index, Args &&...args);
 
-  template <typename... Args>
-  void broadcast(Args&&... args);
+  template <typename... Args> void broadcast(Args &&...args);
 
   inline int index(void) const {
     return static_cast<ArrayElement1D *>(CkActiveObj())->thisIndex;
@@ -146,7 +111,7 @@ template <typename T> struct task : public task_base_ {
 };
 
 using task_creator_t = task_base_ *(*)(task_payload &&);
-using task_puper_t = void (*)(PUP::er &, task_base_ *&);
+using task_puper_t = void (*)(puper_t &, task_base_ *&);
 using continuation_t = void (*)(task_base_ *, task_payload &&);
 
 struct task_record_ {
@@ -171,8 +136,8 @@ template <typename T> struct task_creation_helper_ {
 };
 
 template <typename T> struct task_puping_helper_ {
-  static void pup(PUP::er &p, task_base_ *&task) {
-    if (p.isUnpacking()) {
+  static void pup(puper_t &p, task_base_ *&task) {
+    if (pup_is_unpacking(p)) {
       task = new T(PUP::reconstruct{});
     }
 
@@ -229,7 +194,7 @@ struct workgroup : public CBase_workgroup {
   void resume(task_message *);
   void resume(CkReductionMsg *);
   bool resume(task_id, task_payload &);
-  void pup(PUP::er &p);
+  void pup(puper_t &p);
 
   task_id generate_id(void) {
     return task_id{.host_ = thisIndex, .task_ = this->last_task_++};
@@ -321,7 +286,7 @@ void workgroup::buffer_(task_id tid, task_payload &&payload) {
   search->second.emplace_back(std::move(payload));
 }
 
-void workgroup::pup(PUP::er &p) {
+void workgroup::pup(puper_t &p) {
   p | this->last_task_;
   p | this->tasks_;
   p | this->buffers_;
@@ -329,8 +294,7 @@ void workgroup::pup(PUP::er &p) {
 
 using workgroup_proxy = CProxy_workgroup;
 
-template <typename... Args>
-task_message* pack(Args &&... args) {
+template <typename... Args> task_message *pack(Args &&...args) {
   auto tuple = std::forward_as_tuple(args...);
 
   PUP::sizer s;
@@ -353,7 +317,7 @@ task_id launch(const workgroup_proxy &group, Args &&...args) {
       local ? &(local->*detail::get(detail::backstage_pass())) : nullptr;
   CkAssert(elems && !elems->empty());
 
-  auto* msg = pack(std::forward<Args>(args)...);
+  auto *msg = pack(std::forward<Args>(args)...);
   auto tid = ((workgroup *)elems->front())->generate_id();
 
   msg->tid = tid;
@@ -427,8 +391,8 @@ void task<T>::reduce(Data &data, CkReduction::reducerType type,
 
 template <typename T>
 template <typename... Args>
-void task<T>::send(int index, Args &&... args) {
-  auto *host = (workgroup*)CkActiveObj();
+void task<T>::send(int index, Args &&...args) {
+  auto *host = (workgroup *)CkActiveObj();
   auto *msg = pack(std::forward<Args>(args)...);
   msg->tid = host->active_;
   host->thisProxy[index].resume(msg);
@@ -436,8 +400,8 @@ void task<T>::send(int index, Args &&... args) {
 
 template <typename T>
 template <typename... Args>
-void task<T>::broadcast(Args &&... args) {
-  auto *host = (workgroup*)CkActiveObj();
+void task<T>::broadcast(Args &&...args) {
+  auto *host = (workgroup *)CkActiveObj();
   auto *msg = pack(std::forward<Args>(args)...);
   msg->tid = host->active_;
   host->thisProxy.resume(msg);
