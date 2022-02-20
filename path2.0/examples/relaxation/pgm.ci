@@ -1,0 +1,7 @@
+mainmodule pgm {
+    extern module workgroup;
+
+    mainchare pgm {
+        entry pgm(CkArgMsg*);
+    };
+};
