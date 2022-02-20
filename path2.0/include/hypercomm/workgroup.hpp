@@ -297,15 +297,9 @@ using workgroup_proxy = CProxy_workgroup;
 template <typename... Args> task_message *pack(Args &&...args) {
   auto tuple = std::forward_as_tuple(args...);
 
-  PUP::sizer s;
-  s | tuple;
-
-  auto size = (int)s.size();
+  auto size = pup_size(tuple);
   auto *msg = new (&size) task_message;
-
-  PUP::toMem p(msg->data);
-  p | tuple;
-  CkAssert(size == p.size());
+  pup_pack(tuple, msg->data, size);
 
   return msg;
 }
@@ -369,12 +363,9 @@ template <typename T>
 template <typename Data>
 void task<T>::reduce(Data &data, CkReduction::reducerType type,
                      const CkCallback &cb) {
-  PUP::sizer s;
-  s | data;
-
-  auto size = s.size();
+  auto size = pup_size(data);
   char *buf = (char *)alloca(size);
-  PUP::toMemBuf(data, buf, size);
+  pup_pack(data, buf, size);
 
   auto *host = (workgroup *)CkActiveObj();
   auto &tid = host->active_;
