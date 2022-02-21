@@ -23,7 +23,7 @@ struct task_id_hasher_ {
 };
 
 using task_kind_t = std::uint32_t;
-using continuation_id_t = std::uint32_t;
+using continuation_id_t = CMK_REFNUM_TYPE;
 
 struct task_base_;
 } // namespace hypercomm

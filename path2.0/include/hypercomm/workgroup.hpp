@@ -61,6 +61,10 @@ struct task_payload {
 
   task_payload(PUP::reconstruct) {}
 
+  continuation_id_t id(void) const {
+    return (continuation_id_t)CkGetRefNum(src.get());
+  }
+
   void pup(puper_t &p) {
     if (pup_is_unpacking(p)) {
       void *msg;
@@ -88,26 +92,33 @@ template <typename T> struct task : public task_base_ {
 
   task(void) : task_base_(kind_) {}
 
-  template <continuation_fn_t Fn> void suspend(void);
+  template <continuation_fn_t Fn> void suspend(void) {
+    this->continuation_ = id_for<Fn>();
+  }
 
   inline void terminate(void) { this->active_ = false; }
 
-  template <typename Data>
+  template <continuation_fn_t Fn, typename Data>
   void all_reduce(Data &data, CkReduction::reducerType type);
 
-  template <typename Data>
+  template <continuation_fn_t Fn, typename Data>
   void reduce(Data &data, CkReduction::reducerType type, int index);
 
   template <typename Data>
   void reduce(Data &data, CkReduction::reducerType type, const CkCallback &cb);
 
-  template <typename... Args> void send(int index, Args &&...args);
+  template <continuation_fn_t Fn, typename... Args>
+  void send(int index, Args &&...args);
 
-  template <typename... Args> void broadcast(Args &&...args);
+  template <continuation_fn_t Fn, typename... Args>
+  void broadcast(Args &&...args);
 
   inline int index(void) const {
     return static_cast<ArrayElement1D *>(CkActiveObj())->thisIndex;
   }
+
+  template <continuation_fn_t Fn>
+  static constexpr continuation_id_t id_for(void);
 };
 
 using task_creator_t = task_base_ *(*)(task_payload &&);
@@ -193,7 +204,7 @@ struct workgroup : public CBase_workgroup {
   void create(task_message *);
   void resume(task_message *);
   void resume(CkReductionMsg *);
-  bool resume(task_id, task_payload &);
+  bool resume(task_id, task_payload &, bool *active = nullptr);
   void pup(puper_t &p);
 
   task_id generate_id(void) {
@@ -203,14 +214,19 @@ struct workgroup : public CBase_workgroup {
 private:
   template <typename T>
   using task_map = std::unordered_map<task_id, T, task_id_hasher_>;
+  using continuation_queue =
+      std::unordered_map<continuation_id_t, std::deque<task_payload>>;
+
+  using task_iterator =
+      typename task_map<std::unique_ptr<task_base_>>::iterator;
 
   task_id active_;
   std::uint32_t last_task_;
   task_map<std::unique_ptr<task_base_>> tasks_;
-  task_map<std::deque<task_payload>> buffers_;
+  task_map<continuation_queue> buffers_;
 
   void buffer_(task_id tid, task_payload &&payload);
-  void flush_buffers_(task_id tid);
+  void try_continue_(const task_iterator &search);
 };
 
 void workgroup::create(task_message *msg) {
@@ -219,22 +235,35 @@ void workgroup::create(task_message *msg) {
   // record the active task
   this->active_ = tid;
   // then construct the task
-  auto ins = this->tasks_.emplace(tid, creator(task_payload(msg)));
-  CkAssertMsg(ins.second, "task creation unsucessful!");
-  this->flush_buffers_(tid);
+  auto *task = creator(task_payload(msg));
+  // only active tasks get maintained!
+  if (task->active_) {
+    auto ins = this->tasks_.emplace(tid, task);
+    CkAssertMsg(ins.second, "task insertion unsucessful!");
+    this->try_continue_(ins.first);
+  }
 }
 
-void workgroup::flush_buffers_(task_id tid) {
-  auto search = this->buffers_.find(tid);
-  if ((search == std::end(this->buffers_)) || search->second.empty()) {
+void workgroup::try_continue_(const workgroup::task_iterator &it) {
+  auto &task = it->second;
+  auto &tid = this->active_;
+  auto &map = this->buffers_[tid];
+  // check whether there are messages for this continuation
+  auto search = map.find(task->continuation_);
+  if ((search == std::end(map)) || search->second.empty()) {
     return;
-  }
-  auto &buffer = search->second;
-  auto &payload = buffer.front();
-  if (this->resume(tid, payload)) {
-    buffer.pop_front();
-
-    this->flush_buffers_(tid);
+  } else {
+    bool active;
+    auto &buffer = search->second;
+    // if so -- try delivering it!
+    if (this->resume(tid, buffer.front(), &active)) {
+      // pop it when we succeed
+      buffer.pop_front();
+      // keep going when the task is still alive
+      if (active) {
+        this->try_continue_(it);
+      }
+    }
   }
 }
 
@@ -259,31 +288,43 @@ void workgroup::resume(CkReductionMsg *msg) {
   }
 }
 
-bool workgroup::resume(task_id tid, task_payload &payload) {
+bool workgroup::resume(task_id tid, task_payload &payload, bool *active) {
   auto search = this->tasks_.find(tid);
   if (search == std::end(this->tasks_)) {
     return false;
   } else {
     auto &task = search->second;
-    auto continuation = get_continuation_(task->continuation_);
+    auto &id = task->continuation_;
+    // reject out of order messages
+    if (id != payload.id()) {
+      return false;
+    }
     // set the active task
     this->active_ = tid;
     // invoke the continuation
+    auto continuation = get_continuation_(id);
     continuation(task.get(), std::move(payload));
-    // then cleanup if the task shutdown
-    if (!task->active_) {
+    auto keep = task->active_;
+    // discard task if its inactive
+    if (!keep) {
       this->tasks_.erase(search);
+    }
+    // check whether anyone's observing us
+    if (active == nullptr) {
+      if (keep) {
+        // if not, and we kept the task, move on
+        this->try_continue_(search);
+      }
+    } else {
+      // otherwise, inform them of the outcome
+      *active = keep;
     }
     return true;
   }
 }
 
 void workgroup::buffer_(task_id tid, task_payload &&payload) {
-  auto search = this->buffers_.find(tid);
-  if (search == std::end(this->buffers_)) {
-    search = this->buffers_.emplace().first;
-  }
-  search->second.emplace_back(std::move(payload));
+  this->buffers_[tid][payload.id()].emplace_back(std::move(payload));
 }
 
 void workgroup::pup(puper_t &p) {
@@ -336,27 +377,23 @@ continuation_id_t continuation_helper_<T, Fn>::id_ =
     register_continuation_<&continuation_helper_<T, Fn>::resume>();
 
 template <typename T>
-template <typename task<T>::continuation_fn_t Fn>
-void task<T>::suspend(void) {
-  this->continuation_ = continuation_helper_<T, Fn>::id_;
-}
-
-template <typename T>
-template <typename Data>
+template <typename task<T>::continuation_fn_t Fn, typename Data>
 void task<T>::all_reduce(Data &data, CkReduction::reducerType type) {
   auto *host = static_cast<ArrayElement *>(CkActiveObj());
-  this->reduce(data, type,
-               CkCallback(CkIndex_workgroup::resume((CkReductionMsg *)nullptr),
-                          host->ckGetArrayID()));
+  CkCallback cb(CkIndex_workgroup::resume((CkReductionMsg *)nullptr),
+                host->ckGetArrayID());
+  cb.setRefNum(id_for<Fn>());
+  this->reduce(data, type, cb);
 }
 
 template <typename T>
-template <typename Data>
+template <typename task<T>::continuation_fn_t Fn, typename Data>
 void task<T>::reduce(Data &data, CkReduction::reducerType type, int index) {
   auto *host = static_cast<ArrayElement *>(CkActiveObj());
-  this->reduce(data, type,
-               CkCallback(CkIndex_workgroup::resume((CkReductionMsg *)nullptr),
-                          CkArrayIndex1D(index), host->ckGetArrayID()));
+  CkCallback cb(CkIndex_workgroup::resume((CkReductionMsg *)nullptr),
+                CkArrayIndex1D(index), host->ckGetArrayID());
+  cb.setRefNum(id_for<Fn>());
+  this->reduce(data, type, cb);
 }
 
 template <typename T>
@@ -371,7 +408,8 @@ void task<T>::reduce(Data &data, CkReduction::reducerType type,
   auto &tid = host->active_;
 
   CkReduction::tupleElement redn[] = {
-      CkReduction::tupleElement(sizeof(task_id), &tid, CkReduction::bitvec_and_int),
+      CkReduction::tupleElement(sizeof(task_id), &tid,
+                                CkReduction::bitvec_and_int),
       CkReduction::tupleElement(size, buf, type)};
 
   auto *msg = CkReductionMsg::buildFromTuple(redn, 2);
@@ -381,21 +419,29 @@ void task<T>::reduce(Data &data, CkReduction::reducerType type,
 }
 
 template <typename T>
-template <typename... Args>
+template <typename task<T>::continuation_fn_t Fn, typename... Args>
 void task<T>::send(int index, Args &&...args) {
   auto *host = (workgroup *)CkActiveObj();
   auto *msg = pack(std::forward<Args>(args)...);
   msg->tid = host->active_;
+  CkSetRefNum(msg, id_for<Fn>());
   host->thisProxy[index].resume(msg);
 }
 
 template <typename T>
-template <typename... Args>
+template <typename task<T>::continuation_fn_t Fn, typename... Args>
 void task<T>::broadcast(Args &&...args) {
   auto *host = (workgroup *)CkActiveObj();
   auto *msg = pack(std::forward<Args>(args)...);
   msg->tid = host->active_;
+  CkSetRefNum(msg, id_for<Fn>());
   host->thisProxy.resume(msg);
+}
+
+template <typename T>
+template <typename task<T>::continuation_fn_t Fn>
+constexpr continuation_id_t task<T>::id_for(void) {
+  return continuation_helper_<T, Fn>::id_;
 }
 } // namespace hypercomm
 

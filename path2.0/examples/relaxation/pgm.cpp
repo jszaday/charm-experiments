@@ -52,12 +52,12 @@ public:
 
     if (this->hasLeft) {
       // TODO ( pack ghost data )
-      this->send(idx - 1);
+      this->send<&relaxation_task::receive_ghost>(idx - 1);
     }
 
     if (this->hasRight) {
       // TODO ( pack ghost data )
-      this->send(idx + 1);
+      this->send<&relaxation_task::receive_ghost>(idx + 1);
     }
   }
 
@@ -76,7 +76,8 @@ public:
 
     CkPrintf("%d> iteration %d\n", this->index(), this->it);
 
-    this->all_reduce(max_error, CkReduction::max_double);
+    this->all_reduce<&relaxation_task::receive_max_error>(
+        max_error, CkReduction::max_double);
     this->suspend<&relaxation_task::receive_max_error>();
   }
 
