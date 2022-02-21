@@ -251,9 +251,9 @@ void workgroup::resume(CkReductionMsg *msg) {
   msg->toTuple(&results, &nReductions);
   CkAssert(nReductions == 2);
   task_payload payload(msg, &results[1]);
-  auto *set = (CkReduction::setElement *)results[0].data;
-  CkAssert(set->next() == nullptr);
-  auto &tid = *((task_id *)set->data);
+  auto &elt = results[0];
+  CkAssert(elt.dataSize == sizeof(task_id));
+  auto &tid = *((task_id *)elt.data);
   if (!this->resume(tid, payload)) {
     this->buffer_(tid, std::move(payload));
   }
@@ -371,7 +371,7 @@ void task<T>::reduce(Data &data, CkReduction::reducerType type,
   auto &tid = host->active_;
 
   CkReduction::tupleElement redn[] = {
-      CkReduction::tupleElement(sizeof(task_id), &tid, CkReduction::set),
+      CkReduction::tupleElement(sizeof(task_id), &tid, CkReduction::bitvec_and_int),
       CkReduction::tupleElement(size, buf, type)};
 
   auto *msg = CkReductionMsg::buildFromTuple(redn, 2);

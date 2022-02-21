@@ -115,6 +115,7 @@ public:
   pgm(CkArgMsg *msg) {
     auto factor = (msg->argc >= 2) ? atoi(msg->argv[1]) : 4;
     auto n = factor * CkNumPes();
+    CkEnforceMsg(n > 0, "must have at least one chare");
     auto maxIters = 100;
     auto tolerance = 0.005;
     group = hypercomm::workgroup_proxy::ckNew(n);
