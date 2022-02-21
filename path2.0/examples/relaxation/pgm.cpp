@@ -78,6 +78,7 @@ public:
 
     this->all_reduce<&relaxation_task::receive_max_error>(
         max_error, CkReduction::max_double);
+
     this->suspend<&relaxation_task::receive_max_error>();
   }
 
