@@ -88,12 +88,33 @@ public:
   }
 
   void on_converge(void) {
-    // signal this task can be cleaned up by the RTS
-    this->terminate();
+    auto idx = this->index();
+    auto root = 0;
 
-    if (this->index() == 0) {
-      CkExit();
+    // send our contribution to the root
+    this->reduce<&relaxation_task::receive_grid>(idx, CkReduction::set, root);
+
+    if (root == idx) {
+      this->suspend<&relaxation_task::receive_grid>();
+    } else {
+      this->terminate();
     }
+  }
+
+  void receive_grid(hypercomm::task_payload &&payload) {
+    std::set<int> set;
+    auto *elt = (CkReduction::setElement *)payload.data;
+    // move all the reduction set's entries into the set
+    while (elt) {
+      set.insert(*((int *)elt->data));
+      elt = elt->next();
+    }
+    // validate that we received all elements
+    CkAssert(this->nWorkers == set.size());
+    // signal the task is ready to shut down
+    this->terminate();
+    // then actually shut down!
+    CkExit();
   }
 
   void pup(PUP::er &p) {
