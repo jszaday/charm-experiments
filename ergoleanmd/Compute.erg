@@ -1,0 +1,29 @@
+package ergoleanmd;
+
+import ergoline::_;
+import ck;
+
+class Compute {
+    @entry def self() {}
+
+    @mailbox def calculateForces(
+        step: int, sender: (int, int, int),
+        particles: array<(double, double, double)>
+    );
+
+    @threaded @entry def run() {
+        val selfIndex = self[@]index();
+        val selfInteract =
+            (selfIndex[0] == selfIndex[3]) &&
+            (selfIndex[1] == selfIndex[4]) &&
+            (selfIndex[2] == selfIndex[5]);
+        for (var step = 1; step <= Globals.nSteps; step += 1) {
+            if (selfInteract) {
+                when calculateForces(_ == step, _, _) => ;
+            } else {
+                when calculateForces(_ == step, _, _),
+                     calculateForces(_ == step, _, _) => ;
+            }
+        }
+    }
+}

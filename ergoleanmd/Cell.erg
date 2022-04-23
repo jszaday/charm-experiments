@@ -1,0 +1,10 @@
+package ergoleanmd;
+
+import ergoline::_;
+import ck;
+
+class Cell {
+    @entry def self() {
+        
+    }
+}

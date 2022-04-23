@@ -1,0 +1,14 @@
+package ergoleanmd;
+
+import ergoline::_;
+import ck;
+
+object Globals {
+    var nSteps: int = 1001;
+    var cellArrayDimX: int = 3;
+    var cellArrayDimY: int = 3;
+    var cellArrayDimZ: int = 3;
+    var mainProxy: Main@;
+    var cellProxy: Cell@array3d;
+    var computeProxy: Compute@array6d;
+}
