@@ -3,6 +3,7 @@
 
 #include <mpi.h>
 
+#include <cmath>
 #include <iostream>
 #include <map>
 #include <memory>
@@ -12,8 +13,12 @@
 
 namespace warp {
 
+MPI_Aint tag_ub, obj_bits, ep_bits;
+
 int __encode(std::size_t obj, std::size_t ep) {
-  return 42;
+  int tag = (obj << ep_bits) | ep;
+  tag = (tag > tag_ub) ? -1 : tag;
+  return tag;
 }
 
 struct message {
@@ -23,9 +28,7 @@ struct message {
 
   inline void* data(void) const;
 
-  int tag(void) const {
-    return __encode(this->obj, this->ep);
-  }
+  int tag(void) const { return __encode(this->obj, this->ep); }
 
   static std::unique_ptr<message> allocate(std::size_t size) {
     auto* msg = (message*)(::operator new(sizeof(message) + size));
@@ -56,6 +59,7 @@ struct entry_info {
 };
 
 int rank, nRanks;
+std::size_t obj_id_lb, obj_id_ub;
 std::vector<entry_info> entry_table;
 std::vector<std::unique_ptr<task>> tasks;
 
@@ -142,6 +146,39 @@ inline void __run_once(void) {
       break;
     }
   }
+}
+
+bool initialize(int& argc, char**& argv) {
+  auto err = MPI_SUCCESS;
+  MPI_Init(&argc, &argv);
+  err &= MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  err &= MPI_Comm_size(MPI_COMM_WORLD, &nRanks);
+
+  // signal MPI that we don't care about the order of messages
+  MPI_Info info;
+  err &= MPI_Info_create(&info);
+  err &= MPI_Info_set(info, "mpi_assert_allow_overtaking", "true");
+  err &= MPI_Comm_set_info(MPI_COMM_WORLD, info);
+  err &= MPI_Info_free(&info);
+
+  {
+    int flag;
+    MPI_Aint* tag_ub_ptr;
+    err &= MPI_Comm_get_attr(MPI_COMM_WORLD, MPI_TAG_UB, &tag_ub_ptr, &flag);
+    tag_ub = *tag_ub_ptr;
+  }
+
+  auto tag_bits = (MPI_Aint)log2((double)tag_ub + 1);
+  ep_bits = tag_bits / 2;
+  obj_bits = tag_bits - ep_bits;
+
+  auto obj_id_max = 0b1 << obj_bits;
+  auto obj_id_per_rank = obj_id_max / nRanks;
+
+  obj_id_lb = obj_id_per_rank * rank;
+  obj_id_ub = (obj_id_per_rank * (rank + 1)) - 1;
+
+  return (err == MPI_SUCCESS);
 }
 }  // namespace warp
 

@@ -1,3 +1,4 @@
+#include <cassert>
 #include <warp.hpp>
 
 using namespace warp;
@@ -54,16 +55,7 @@ struct pingpong : public task {
 };
 
 int main(int argc, char** argv) {
-  MPI_Init(&argc, &argv);
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-  MPI_Comm_size(MPI_COMM_WORLD, &nRanks);
-
-  // signal MPI that we don't care about the order of messages
-  MPI_Info info;
-  MPI_Info_create(&info);
-  MPI_Info_set(info, "mpi_assert_allow_overtaking", "true");
-  MPI_Comm_set_info(MPI_COMM_WORLD, info);
-  MPI_Info_free(&info);
+  assert(initialize(argc, argv));
 
   int msg_size;
   nIters = (argc >= 2) ? atoi(argv[1]) : 128;
