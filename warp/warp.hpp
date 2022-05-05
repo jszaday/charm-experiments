@@ -12,7 +12,9 @@
 
 namespace warp {
 
-constexpr int tag = 42;
+int __encode(std::size_t obj, std::size_t ep) {
+  return 42;
+}
 
 struct message {
   std::size_t obj;
@@ -20,6 +22,10 @@ struct message {
   std::size_t size;
 
   inline void* data(void) const;
+
+  int tag(void) const {
+    return __encode(this->obj, this->ep);
+  }
 
   static std::unique_ptr<message> allocate(std::size_t size) {
     auto* msg = (message*)(::operator new(sizeof(message) + size));
@@ -76,7 +82,7 @@ void __foreach_request(request_map_t& map, const Fn& fn) {
 // receive a message directly into a preallocated buffer
 void request(std::unique_ptr<message>&& msg) {
   MPI_Request req;
-  MPI_Irecv(msg.get(), msg->total_size(), MPI_CHAR, MPI_ANY_SOURCE, tag,
+  MPI_Irecv(msg.get(), msg->total_size(), MPI_CHAR, MPI_ANY_SOURCE, msg->tag(),
             MPI_COMM_WORLD, &req);
   receives.emplace(req, std::move(msg));
 }
@@ -105,7 +111,7 @@ void send(int rank, std::size_t obj, std::size_t ep,
   msg->obj = obj;
   msg->ep = ep;
   MPI_Request req;
-  MPI_Isend(msg.get(), msg->total_size(), MPI_CHAR, rank, tag,
+  MPI_Isend(msg.get(), msg->total_size(), MPI_CHAR, rank, msg->tag(),
             MPI_COMM_WORLD, &req);
   sends.emplace(req, std::move(msg));
 }
@@ -121,7 +127,7 @@ inline void __run_once(void) {
   // iterate through the probe queue...
   while (!probes.empty()) {
     auto& [obj, ep] = probes.front();
-    int flag;
+    int flag, tag = __encode(obj, ep);
     // check if the probe is ready
     MPI_Status status;
     MPI_Iprobe(MPI_ANY_SOURCE, tag, MPI_COMM_WORLD, &flag, &status);
