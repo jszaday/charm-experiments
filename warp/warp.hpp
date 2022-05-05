@@ -12,6 +12,8 @@
 
 namespace warp {
 
+constexpr int tag = 42;
+
 struct message {
   std::size_t obj;
   std::size_t ep;
@@ -56,8 +58,6 @@ using request_map_t = std::map<MPI_Request, std::unique_ptr<message>>;
 request_map_t receives, sends;
 std::queue<std::pair<std::size_t, std::size_t>> probes;
 
-int make_tag(std::size_t obj, std::size_t ep) { return (int)(obj + ep); }
-
 template <typename Fn>
 void __foreach_request(request_map_t& map, const Fn& fn) {
   for (auto it = map.begin(); it != map.end();) {
@@ -73,20 +73,28 @@ void __foreach_request(request_map_t& map, const Fn& fn) {
   }
 }
 
-void __request(int tag, std::size_t obj, std::size_t ep, std::size_t size) {
-  auto msg = message::allocate(size);
+// receive a message directly into a preallocated buffer
+void request(std::unique_ptr<message>&& msg) {
   MPI_Request req;
   MPI_Irecv(msg.get(), msg->total_size(), MPI_CHAR, MPI_ANY_SOURCE, tag,
             MPI_COMM_WORLD, &req);
   receives.emplace(req, std::move(msg));
 }
 
+// internal, receive a message into an allocated buffer
+void __request(std::size_t obj, std::size_t ep, std::size_t size) {
+  auto msg = message::allocate(size);
+  msg->obj = obj;
+  msg->ep = ep;
+  request(std::move(msg));
+}
+
+// (async) receive a message to the obj's ep
 void request(std::size_t obj, std::size_t ep) {
   auto& entry = entry_table[ep];
   auto& size = entry.size;
   if (size.has_value()) {
-    auto tag = make_tag(obj, ep);
-    __request(tag, obj, ep, *size);
+    __request(obj, ep, *size);
   } else {
     probes.emplace(obj, ep);
   }
@@ -97,7 +105,7 @@ void send(int rank, std::size_t obj, std::size_t ep,
   msg->obj = obj;
   msg->ep = ep;
   MPI_Request req;
-  MPI_Isend(msg.get(), msg->total_size(), MPI_CHAR, rank, make_tag(obj, ep),
+  MPI_Isend(msg.get(), msg->total_size(), MPI_CHAR, rank, tag,
             MPI_COMM_WORLD, &req);
   sends.emplace(req, std::move(msg));
 }
@@ -113,7 +121,6 @@ inline void __run_once(void) {
   // iterate through the probe queue...
   while (!probes.empty()) {
     auto& [obj, ep] = probes.front();
-    auto tag = make_tag(obj, ep);
     int flag;
     // check if the probe is ready
     MPI_Status status;
@@ -123,7 +130,7 @@ inline void __run_once(void) {
       // make the request
       int count;
       MPI_Get_count(&status, MPI_CHAR, &count);
-      __request(tag, obj, ep, (std::size_t)count);
+      __request(obj, ep, (std::size_t)count);
       probes.pop();
     } else {
       break;
