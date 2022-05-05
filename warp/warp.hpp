@@ -3,13 +3,13 @@
 
 #include <mpi.h>
 
-#include <cmath>
 #include <iostream>
 #include <map>
 #include <memory>
 #include <optional>
 #include <queue>
 #include <vector>
+#include <cmath>
 
 namespace warp {
 
@@ -176,7 +176,11 @@ bool initialize(int& argc, char**& argv) {
   auto obj_id_per_rank = obj_id_max / nRanks;
 
   obj_id_lb = obj_id_per_rank * rank;
-  obj_id_ub = (obj_id_per_rank * (rank + 1)) - 1;
+  if (rank == (nRanks - 1)) {
+    obj_id_ub = obj_id_max - 1;
+  } else {
+    obj_id_ub = (obj_id_per_rank * (rank + 1)) - 1;
+  }
 
   return (err == MPI_SUCCESS);
 }
