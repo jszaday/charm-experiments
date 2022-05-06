@@ -13,7 +13,7 @@ struct pingpong : public task {
   double start_time_;
 
   pingpong(int index) : index_(index), it_(0), warmup_(true) {
-    request(index, receive_index);
+    request(index, receive_index, index);
   }
 
   static void receive(std::unique_ptr<task>& obj,
@@ -26,10 +26,10 @@ struct pingpong : public task {
       done = self.finish(MPI_Wtime() - self.start_time_);
     }
 
-    send(peer % nRanks, peer, receive_index, std::move(msg));
+    send(peer % nRanks, peer, receive_index, peer, std::move(msg));
 
     if (!done) {
-      request(self.index_, receive_index);
+      request(self.index_, receive_index, self.index_);
     }
   }
 
@@ -79,7 +79,7 @@ int main(int argc, char** argv) {
   if (rank == 0) {
     std::cout << rank << "> pingpong with " << nIters << " iterations and "
               << msg_size << " B payload" << std::endl;
-    send((rank + 1) % nRanks, 1, receive_index, message::allocate(msg_size));
+    send((rank + 1) % nRanks, 1, receive_index, 1, message::allocate(msg_size));
   }
 
   while (running) {

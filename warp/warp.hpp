@@ -13,22 +13,19 @@
 
 namespace warp {
 
-MPI_Aint tag_ub, obj_bits, ep_bits;
-
-int __encode(std::size_t obj, std::size_t ep) {
-  int tag = (obj << ep_bits) | ep;
-  tag = (tag > tag_ub) ? -1 : tag;
-  return tag;
-}
-
 struct message {
   std::size_t obj;
   std::size_t ep;
   std::size_t size;
+  int tag;
+
+  inline void set_properties(std::size_t obj, std::size_t ep, int tag) {
+    this->obj = obj;
+    this->ep = ep;
+    this->tag = tag;
+  }
 
   inline void* data(void) const;
-
-  int tag(void) const { return __encode(this->obj, this->ep); }
 
   static std::unique_ptr<message> allocate(std::size_t size) {
     auto* msg = (message*)(::operator new(sizeof(message) + size));
@@ -59,14 +56,13 @@ struct entry_info {
 };
 
 int rank, nRanks;
-std::size_t obj_id_lb, obj_id_ub;
 std::vector<entry_info> entry_table;
 std::vector<std::unique_ptr<task>> tasks;
 
 using request_map_t = std::map<MPI_Request, std::unique_ptr<message>>;
 
 request_map_t receives, sends;
-std::queue<std::pair<std::size_t, std::size_t>> probes;
+std::queue<std::tuple<std::size_t, std::size_t, int>> probes;
 
 template <typename Fn>
 void __foreach_request(request_map_t& map, const Fn& fn) {
@@ -86,36 +82,34 @@ void __foreach_request(request_map_t& map, const Fn& fn) {
 // receive a message directly into a preallocated buffer
 void request(std::unique_ptr<message>&& msg) {
   MPI_Request req;
-  MPI_Irecv(msg.get(), msg->total_size(), MPI_CHAR, MPI_ANY_SOURCE, msg->tag(),
+  MPI_Irecv(msg.get(), msg->total_size(), MPI_CHAR, MPI_ANY_SOURCE, msg->tag,
             MPI_COMM_WORLD, &req);
   receives.emplace(req, std::move(msg));
 }
 
 // internal, receive a message into an allocated buffer
-void __request(std::size_t obj, std::size_t ep, std::size_t size) {
+void __request(std::size_t obj, std::size_t ep, std::size_t size, int tag) {
   auto msg = message::allocate(size);
-  msg->obj = obj;
-  msg->ep = ep;
+  msg->set_properties(obj, ep, tag);
   request(std::move(msg));
 }
 
 // (async) receive a message to the obj's ep
-void request(std::size_t obj, std::size_t ep) {
+void request(std::size_t obj, std::size_t ep, int tag) {
   auto& entry = entry_table[ep];
   auto& size = entry.size;
   if (size.has_value()) {
-    __request(obj, ep, *size);
+    __request(obj, ep, *size, tag);
   } else {
-    probes.emplace(obj, ep);
+    probes.emplace(obj, ep, tag);
   }
 }
 
-void send(int rank, std::size_t obj, std::size_t ep,
+void send(int rank, std::size_t obj, std::size_t ep, int tag,
           std::unique_ptr<message>&& msg) {
-  msg->obj = obj;
-  msg->ep = ep;
   MPI_Request req;
-  MPI_Isend(msg.get(), msg->total_size(), MPI_CHAR, rank, msg->tag(),
+  msg->set_properties(obj, ep, tag);
+  MPI_Isend(msg.get(), msg->total_size(), MPI_CHAR, rank, msg->tag,
             MPI_COMM_WORLD, &req);
   sends.emplace(req, std::move(msg));
 }
@@ -130,8 +124,8 @@ inline void __run_once(void) {
   });
   // iterate through the probe queue...
   while (!probes.empty()) {
-    auto& [obj, ep] = probes.front();
-    int flag, tag = __encode(obj, ep);
+    int flag;
+    auto& [obj, ep, tag] = probes.front();
     // check if the probe is ready
     MPI_Status status;
     MPI_Iprobe(MPI_ANY_SOURCE, tag, MPI_COMM_WORLD, &flag, &status);
@@ -140,7 +134,7 @@ inline void __run_once(void) {
       // make the request
       int count;
       MPI_Get_count(&status, MPI_CHAR, &count);
-      __request(obj, ep, (std::size_t)count);
+      __request(obj, ep, (std::size_t)count - sizeof(message), tag);
       probes.pop();
     } else {
       break;
@@ -160,27 +154,6 @@ bool initialize(int& argc, char**& argv) {
   err &= MPI_Info_set(info, "mpi_assert_allow_overtaking", "true");
   err &= MPI_Comm_set_info(MPI_COMM_WORLD, info);
   err &= MPI_Info_free(&info);
-
-  {
-    int flag;
-    MPI_Aint* tag_ub_ptr;
-    err &= MPI_Comm_get_attr(MPI_COMM_WORLD, MPI_TAG_UB, &tag_ub_ptr, &flag);
-    tag_ub = *tag_ub_ptr;
-  }
-
-  auto tag_bits = (MPI_Aint)log2((double)tag_ub + 1);
-  ep_bits = tag_bits / 2;
-  obj_bits = tag_bits - ep_bits;
-
-  auto obj_id_max = 0b1 << obj_bits;
-  auto obj_id_per_rank = obj_id_max / nRanks;
-
-  obj_id_lb = obj_id_per_rank * rank;
-  if (rank == (nRanks - 1)) {
-    obj_id_ub = obj_id_max - 1;
-  } else {
-    obj_id_ub = (obj_id_per_rank * (rank + 1)) - 1;
-  }
 
   return (err == MPI_SUCCESS);
 }
